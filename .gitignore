@@ -1,3 +1,12 @@
 samples/*.csv
 samples/*.zip
 samples/readme.html
+*.swp
+hbasey/classes
+hbasey/lib
+hbasey/pom.xml
+hbasey/*jar
+hbasey/native
+hbasey/.lein-failures
+hbasey/checkouts
+hbasey/.lein-deps-sum
