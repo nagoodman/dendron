@@ -114,14 +114,14 @@
   ; already been defined for us.
   ; (In practice, this means the keys are known up front as well as
   ; the total max-N of the data in any dimension.)
-  ; basically this is just the cube update function assuming
-  ; everything initially starts with 0
   (let [dimwise-level-anchors (map #(read-md-val cubemd %1) cell)
         dims (count dimwise-level-anchors)
         anchors (partition dims (apply interleave dimwise-level-anchors))
         current-data (read-sum-val cube cell)
         _ (println "a: " anchors " cur: " current-data)
         ]
+    ; just update the relevant anchors and intersecting border cells at all
+    ; levels; do the border sums later.
     (doseq [[idx anchor] (map-indexed vector anchors)]
       (println idx anchor)
       (println (nth (first cube2d-meta-part2) idx))
@@ -146,7 +146,15 @@
 (make-cube-v1 tab (vec {[[2011 :q2] :ca] 2}) mdtab)
 
 (defn get-dependent-anchors [anchor]
-  )
+  ; gets the anchors that are "more right" or "more down" than the given anchor
+  (map (fn [[dim_idx dim_val]]
+         ; find dimension, get its pair
+         (some (fn [levels]
+                 (some (fn [level] (if (= anchor (first (:anchor-pairs level))) (:anchor-pairs level) nil)) levels)
+                 ) (nth cube2d-meta-part2 dim_idx))
+         )
+    (map-indexed vector anchor)
+  ))
 
 (defn app [args]
   (clean-d-tbl)
