@@ -1,3 +1,5 @@
+(ns hbasey.newmodel)
+
 (def sparse2d ^{:dimensions [[:year :qtr] :origin] :measure :qty}
   {[[2010 :q1] :ca] 2
    [[2010 :q1] :wa] 2
@@ -32,21 +34,24 @@
 
 (def cube2d-meta
   ; dim-key [relative-key-anchor-at-top-level, next-level, ...]
-  {; first dimension
-   [2010 :q1] [[2010 :q1]]
-   [2010 :q2] [[2010 :q1], [2010 :q2]]
-   [2010 :q3] [[2010 :q1], [2010 :q2], [2010 :q3]]
-   [2010 :q4] [[2010 :q1], [2010 :q4]]
-   [2011 :q1] [[2010 :q1], [2010 :q4], [2011 :q1]]
-   [2011 :q2] [[2011 :q2]]
-   ; four extra "unused"
-   ; second dimension
-   :ca [:ca]
-   :or [:ca :or]
-   :wa [:ca :or :wa]
-   ; 7 extra "unused"
-   })
+  [[; first dimension
+    [2010 :q1] [[2010 :q1]]
+    [2010 :q2] [[2010 :q1], [2010 :q2]]
+    [2010 :q3] [[2010 :q1], [2010 :q2], [2010 :q3]]
+    [2010 :q4] [[2010 :q1], [2010 :q4]]
+    [2011 :q1] [[2010 :q1], [2010 :q4], [2011 :q1]]
+    [2011 :q2] [[2011 :q2]]
+    ; four extra "unused"
+    ]
+   [
+    ; second dimension
+    :ca [:ca]
+    :or [:ca :or]
+    :wa [:ca :or :wa]
+    ; 7 extra "unused"
+    ]])
 
+; part2 is obsolete
 (def cube2d-meta-part2
   [
    [; first dimension (level 0 is the top, not the leaf)
@@ -60,6 +65,7 @@
                               (nil nil) ]} ;(d f)
     ]])
 
+;(intern *ns* (symbol a) val)
 
 
 
@@ -71,8 +77,7 @@
 
 
 
-
-
+(comment
 
 
 (defn make-cube-iter [cube [cell data]]
@@ -127,3 +132,5 @@
         ; themselves. Anchors not at the origin are computed by
         ; value + 3.
       )))
+
+)
