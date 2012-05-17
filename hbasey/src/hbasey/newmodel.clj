@@ -24,9 +24,8 @@
    [[2011 :q2] :ca] 11
    ; these are necessary for queries to work accurately
    ; because their values are NOT the same as not-found=0
-   ; (they form a chain so that updates will still work)
-   [[2010 :q4] :ca] {:goto [[2010 :q3] :ca]}
-   [[2011 :q1] :ca] {:goto [[2010 :q4] :ca]}
+   [[2010 :q4] :ca] 7
+   [[2011 :q1] :ca] 7
    ; and these are necessary for square queries along the 11-q2 dim
    [[2011 :q2] :or] 6
    [[2011 :q2] :wa] 15

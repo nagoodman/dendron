@@ -5,11 +5,10 @@
   (:require [clojure-hbase.core :as hb]
             [clojure-hbase.admin :as hba]
             [hbasey.dcubeutils :as dcu])
-  (:use [hbasey.testdata]))
-;(use :reload 'hbasey.newmodel)
-(declare cube2d-meta keytab tab)
+  (:use [hbasey.testdata]
+        [hbasey.newmodel]))
 
-;(def tbl-name (str "clojure-hbase-test-db" (UUID/randomUUID)))
+(declare keytab tab add-row-to-cube sum-cube-borders query-cube clean-d-tbl)
 
 (def d-tbl "hbase-data-table")
 (def d-fam "dfam")
@@ -22,7 +21,7 @@
 
 (declare app)
 (defn -main [& args]
-  (if (hba/master-running?) (app args)))
+  (if (hba/master-running?) (do (clean-d-tbl) (time (app args)))))
 
 
 (defn create-d-tbl []
@@ -86,21 +85,23 @@
     (let [res (read-long-vals tab dimensions [d-fam :sum])]
       ;(if-let [real (:goto res)]
       ;  (read-sum-val tab real)
-        res);)
+        (or res 0));)
     (catch NullPointerException e 0)))
 
-(def really-store? false)
+(def really-store? true)
 
 (defn store-sum-val [cube cell sum]
   (let [cell (vec cell)]
-    ;(print "storing sum" cell "=>" sum "; ")
-    (if really-store? ;(println "new val:"
-             (.incrementColumnValue cube
-                           (hb/to-bytes cell)
-                           (hb/to-bytes d-fam)
-                           (hb/to-bytes :sum)
-                           sum))));)
-    ;(hb/put cube cell :value [d-fam :sum sum])))
+    (if really-store? 
+      (.incrementColumnValue cube
+                             (hb/to-bytes cell)
+                             (hb/to-bytes d-fam)
+                             (hb/to-bytes :sum)
+                             sum)
+      (let [orig (read-sum-val cube cell)]
+        (print "would have inc'd" cell "by" sum "to go from" orig "to ")
+        (print (+ orig sum) "; ")
+        (+ orig sum)))))
 
 
 (defn read-md-val [tab dimension k]
@@ -123,28 +124,27 @@
   (applyTo [this args] (clojure.lang.AFn/applyToHelper this args)))
 
 (defn app [args]
-  (clean-d-tbl)
+  (def tab (hb/table d-tbl))
+  (def mdtab (hb/table d-md-tbl))
+  (def keytab (hb/table d-k-tbl))
 
-  (comment (hb/with-table [tab (hb/table d-tbl)]
-    (doseq [[k v] cube2d]
-      (hb/put tab k :value [d-fam :measures [:sum v]]))))
 
   (time
-  (let [mdtab (hb/table d-md-tbl)
-        keytab (hb/table d-k-tbl)]
-    (doseq [[dim md] (map-indexed vector cube2d-meta)]
-      (doseq [[idx [k v]] (map-indexed vector (partition 2 md))]
-        ; for querying
-        (hb/put mdtab idx :value [d-md-fam (str dim "-anchor") v])
-        ;(println idx "=>" v)
-        ; for building
-        (hb/put keytab k :value [d-k-fam (str dim "-dimkey") idx])
-        ;(println k "=>" idx)
-        (hb/put keytab idx :value [d-k-fam (str dim "-namekey") k])
-        ;(println idx "=>" k "\n")
-        ))
-    (hb/release-table mdtab)
-    (hb/release-table keytab)))
+    (let [mdtab (hb/table d-md-tbl)
+          keytab (hb/table d-k-tbl)]
+      (doseq [[dim md] (map-indexed vector cube2d-meta)]
+        (doseq [[idx [k v]] (map-indexed vector (partition 2 md))]
+          ; for querying
+          (hb/put mdtab idx :value [d-md-fam (str dim "-anchor") v])
+          ;(println idx "=>" v)
+          ; for building
+          (hb/put keytab k :value [d-k-fam (str dim "-dimkey") idx])
+          ;(println k "=>" idx)
+          (hb/put keytab idx :value [d-k-fam (str dim "-namekey") k])
+          ;(println idx "=>" k "\n")
+          ))
+      (hb/release-table mdtab)
+      (hb/release-table keytab)))
 
   (time (do
           (add-row-to-cube tab [0 0] [[[2010 :q1] :ca] 2])
@@ -157,16 +157,24 @@
           (add-row-to-cube tab [0 0] [[[2011 :q1] :wa] 4]) ; (4,2)
           (add-row-to-cube tab [0 0] [[[2011 :q2] :ca] 2]) ; (5,0)
           ))
+
+  (time (println (apply list (sum-cube-borders tab [0 0] 10))))
+
+  (hb/with-table [tab (hb/table d-tbl)]
+    (println (for [day (range 6) st (range 3)]
+              [[day st] (read-sum-val tab [day st])])))
+
+
+  (time (println (query-cube tab mdtab [[2010 :q3] :wa]))) ; expecting 18
+
   )
 
 (comment
 
-(def tab (hb/table d-tbl))
-(def mdtab (hb/table d-md-tbl))
-(def keytab (hb/table d-k-tbl))
-
 (read-sum-val tab [[2010 :q2] :or])
 (read-sum-val tab [[2011 :q1] :ca])
+
+(read-sum-val tab [1 1])
 
 ;(read-md-val mdtab [2010 :q2])
 
@@ -179,7 +187,6 @@
 (read-name2key keytab 0 [2010 :q1])
 
 
-(time (query-cube tab mdtab [[2010 :q3] :wa])) ; expecting 18
 
 (loop [cube table datas sparse2d]
   (if (seq datas)
@@ -195,7 +202,7 @@
 (defn query-cube [cube cubemd cell]
   (let [dimwise-level-anchors (map
                                 (fn [[idx val]]
-                                  (read-md-val cubemd idx val))
+                                  (read-md-val cubemd idx (read-name2key keytab idx val)))
                                 (map-indexed vector cell))
         dims (count dimwise-level-anchors)
         anchors (partition dims (apply interleave dimwise-level-anchors))]
@@ -204,14 +211,14 @@
               ; this and the next map can be replaced with pmap but seems slower
               (fn [anchor]
                 (let [bords (matching-borders cell (vec anchor))]
-                  (reduce + (map #(read-sum-val cube %1)
+                  (reduce + (map #(read-sum-val cube (vec (map-indexed (fn [dim n] (read-name2key keytab dim n)) %1)))
                                   (conj bords anchor)))))
               anchors))))
 
 (defn names2nums [namedcell]
   (map (fn [[dim name]] (read-name2key keytab dim name))
     (map-indexed vector namedcell)))
-(defn names2nums (memoize names2nums))
+(def names2nums (memoize names2nums))
 
 (defmacro pand "parallel and" [& forms]
   (let [r# (eval `(pvalues ~@forms))]
@@ -232,19 +239,6 @@
             %2))
     anchor cell))
 (def get-opposing-border (memoize get-opposing-border))
-
-(comment (defn get-opposing-border [anchor cell N]
-  (map (fn [ai ci]
-            (let [sum (+ ci (/ N 2))]
-              (if (<= sum N)
-                (if (= ai ci) sum
-                  ci)
-                ci)))
-    anchor cell))
-
-(get-opposing-border [3 1] [4 1] 4)
-(get-opposing-border [3 1] [3 2] 4)
-)
 
 (defn cell-in-keys? [cell]
   (every? (fn [[dim k]] (read-key2name keytab dim k))
@@ -292,105 +286,59 @@ really-store?
 
 )
 
+(defn change-at-key
+  "Given a non-vec list,
+  does the equivalent of (assoc (vec lst) k (f (nth (vec lst) k)))"
+  [lst k f]
+  (map-indexed #(if (= %1 k)
+                  (f %2)
+                  %2)
+    lst))
 
+
+(defn get-all-border-regions [origin N]
+  ; return a seq of all pairs of border regions in a cube
+  ; (with the start offset by 1 so that we can start by reading,
+  ; increment, increment, ...)
+  (if (> N 4)
+    (let [anchors (map vec (dcu/anchor-slots origin N))
+          dims (count origin)
+          ; each anchor specifies the start of dims ranges
+          ranges (map (fn [anchor]
+                        (loop [dim 0 pairs []]
+                          (if (< dim dims)
+                            (recur (inc dim)
+                                   (conj pairs
+                                         [(assoc anchor dim (inc (nth anchor dim)))
+                                          (assoc anchor dim (+ (nth anchor dim) (dec (/ N 2))))]
+                                         ))
+                            pairs)))
+                      anchors)
+          sub-N (dec (/ N 2))
+          sub-ranges (map (fn [anchor]
+                            (let [sub-origin (map inc anchor)]
+                              (get-all-border-regions sub-origin sub-N)))
+                          anchors)]
+      (if (every? identity sub-ranges) (conj sub-ranges ranges) ranges))
+    nil))
+
+;(pprint (get-all-border-regions [0 0] 10))
 
 ;called at the end of the initial cube-creation process
-(defn sum-cube-borders [cube]
-  )
-
-(comment
-
-(defn make-cube-v1-graaargh-don't-use [cube [[cell data]] cubemd]
-  ; version 1, we assume for the sake of brevity that the metadata has
-  ; already been defined for us.
-  ; (In practice, this means the keys are known up front as well as
-  ; the total max-N of the data in any dimension.)
-  (let [dimwise-level-anchors (map #(read-md-val cubemd %1) cell)
-        dims (count dimwise-level-anchors)
-        anchors (partition dims (apply interleave dimwise-level-anchors))
-        current-data (read-sum-val cube cell)
-        _ (println "a: " anchors " cur: " current-data)
-        ]
-    ; just update the relevant anchors and intersecting border cells at all
-    ; levels; do the border sums later.
-    (doseq [[idx anchor] (map-indexed vector anchors)]
-      (println idx anchor)
-      (println (nth (first cube2d-meta-part2) idx))
-      )
-    (comment
-      (store-sum-val cube cell (+ current-data data))
-      )
-  ))
-
-(defn get-dependent-anchors [anchor]
-  ; gets the anchors that are "more right" or "more down" than the given anchor
-  (map (fn [[dim_idx dim_val]]
-         ; find dimension, get its pair
-         (some (fn [levels]
-                 (some (fn [level] (if (= anchor (first (:anchor-pairs level))) (:anchor-pairs level) nil)) levels)
-                 ) (nth cube2d-meta-part2 dim_idx))
-         )
-    (map-indexed vector anchor)
-  ))
-
-);;;;
-
-(defn get-cardinality [tab]
-  ; 1, 4, 10, 22, 46...
-  10)
-
-(defn oldapp [args]
-  (if (not-any? #(= d-tbl %1) (map str-name (hba/list-tables)))
-    (create-d-tbl))
-
-  (if (not= -1 (.indexOf args "test")) ; insert test-data
-    (do (clean-d-tbl)
-      (let [tab (hb/table d-tbl)] ; example of direct table ctrl (manual release)
-        ;(dcu/cube2csv expected)
-        (doseq [[k v] expected]
-          (hb/put tab k :value [d-fam :measures [:sum v]]))
-
-        (hb/release-table tab))))
-
-  (if (not= -1 (.indexOf args "readtest"))
-    (hb/with-table [tab (hb/table d-tbl)]
-      (doseq [[k v] expected]
-        (print (= v (read-sum-val tab k))))))
-
-  ;(def tcbue (Cube. ttab))
-  ;(query-ddc-range (with-meta tcube {:N 10}) [7 8])
-
-  (if (not= -1 (.indexOf args "query"))
-    (hb/with-table [tab (hb/table d-tbl)] ; read out a query, say to 7,8
-      ; or to Q4,OR (for Alaska-subset)
-      (let [cube (with-meta (Cube. tab) {:op + :N (get-cardinality tab)})]
-        (dcu/query-ddc-range cube [0 0] [7 8])
-      )))
-  
-  (if (not= -1 (.indexOf args "singlecell"))
-    (hb/with-table [tab (hb/table d-tbl)]
-      (let [cube (with-meta (Cube. tab) {:op + :N (get-cardinality tab)})]
-        (+ (- (dcu/query-ddc-range cube [0 0] [7 8])
-              (dcu/query-ddc-range cube [0 0] [6 8])
-              (dcu/query-ddc-range cube [0 0] [7 7]))
-           (dcu/query-ddc-range cube [0 0] [6 7])))))
-
-  (if (not= -1 (.indexOf args "test2"))
-    (do (clean-d-tbl)
-      (hb/with-table [tab (hb/table d-tbl)]
-        (doseq [[k v] sparse-cube2d]
-          (hb/put tab k :value [d-fam :measures [:sum v]])))))
-
-  (if (not= -1 (.indexOf args "readtest2"))
-    (hb/with-table [tab (hb/table d-tbl)]
-      (doseq [[k v] sparse-cube2d]
-        (print (= v (read-sum-val tab k))))))
-
-  (if (not= -1 (.indexOf args "query2"))
-    (hb/with-table [tab (hb/table d-tbl)]
-      (let [cube (with-meta (Cube. tab) {:op + :N 22})]
-        (dcu/query-ddc-range cube [ 0] [7 8])
-      )))
-
-  )
+(defn sum-cube-borders [cube origin N]
+  (let [dim (count origin)
+        bord-regs (get-all-border-regions origin N)]
+    (map (fn [box]
+           (map-indexed (fn [idx [start end]]
+                          (if (cell-in-keys? start)
+                            (loop [cell start, value (read-sum-val cube start)]
+                              (if (and (< (nth cell idx) (nth end idx))
+                                       (or value (not= cell start)))
+                                (let [next-cell (assoc cell idx (inc (nth cell idx)))]
+                                  (if (cell-in-keys? next-cell)
+                                    (recur next-cell
+                                           (store-sum-val cube next-cell value))))))))
+                        box))
+         bord-regs)
+    ))
 
