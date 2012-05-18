@@ -16,9 +16,6 @@
 (def d-tbl "hbase-data-table")
 (def d-fam "dfam")
 
-(def d-md-tbl "hbase-metadata-table")
-(def d-md-fam "dmdfam")
-
 (def d-k-tbl "hbase-keymap-table")
 (def d-k-fam "dkfam")
 
@@ -32,11 +29,6 @@
   (hba/disable-table d-tbl)
   (hba/add-column-family d-tbl (hba/column-descriptor d-fam))
   (hba/enable-table d-tbl)
-  ; meta tbl (obsolete)
-  (hba/create-table (hba/table-descriptor d-md-tbl))
-  (hba/disable-table d-md-tbl)
-  (hba/add-column-family d-md-tbl (hba/column-descriptor d-md-fam))
-  (hba/enable-table d-md-tbl)
   ; keymap tbl
   (hba/create-table (hba/table-descriptor d-k-tbl))
   (hba/disable-table d-k-tbl)
@@ -46,8 +38,6 @@
 (defn clean-d-tbl []
   (hba/disable-table d-tbl)
   (hba/delete-table d-tbl)
-  (hba/disable-table d-md-tbl)
-  (hba/delete-table d-md-tbl)
   (hba/disable-table d-k-tbl)
   (hba/delete-table d-k-tbl)
   (create-d-tbl))
@@ -88,11 +78,13 @@
   "0 means either not found or actually 0. To be sure if it doesn't exist,
   use (cell-in-keys?)"
   [tab dimensions]
+  ;(print "reading" dimensions)
   (try
     (let [res (read-long-vals tab dimensions [d-fam :sum])]
       ;(if-let [real (:goto res)]
       ;  (read-sum-val tab real)
-        (or res 0));)
+      ;(println " as " res)
+      (or res 0));)
     (catch NullPointerException e 0)))
 
 (def really-store? true)
@@ -110,12 +102,6 @@
         (print (+ orig sum) "; ")
         (+ orig sum)))))
 
-
-(defn read-md-val [tab dimension k]
-  (print "md-val: " dimension k " ")
-  (let [res (read-str-vals tab k [d-md-fam (str dimension "-anchor")])]
-    (println "res: " res)
-    res))
 
 (defn read-name2key [tab dimension name]
   (read-long-vals tab name [d-k-fam (str dimension "-dimkey")]))
@@ -139,35 +125,51 @@
   anchor, and so on, until it reaches itself."
   ([N numkey] (relative-anchors 0 N numkey))
   ([left N numkey]
-    (let [half (/ N 2)]
+    (let [half (+ left (/ N 2))
+          next-n (dec (/ N 2))]
+      (if (and (<= left numkey)
+               (>= N 1))
+        (if (>= numkey half)
+          (conj (relative-anchors (inc half) next-n numkey) half)
+          (conj (relative-anchors (inc left) next-n numkey) left))
+        nil))))
+
+
+
+
+
+
+    (comment (let [half (/ N 2)]
       (loop [cur-key (if (>= numkey half) half left) anchors []]
         (let [lst (conj anchors cur-key)]
           (if (= cur-key numkey)
             lst
             (let [next-key numkey]
-              (recur next-key lst))))))))
+              (recur next-key lst)))))))
+
 
 (comment      (conj (if (> half 1) ; recurse
               (relative-anchors (if (>= numkey half) half left)
                              (dec (/ N 2)) numkey))
             left))
 
-(relative-anchors 10 2)
-;N=10, 2 => 0 1 2
-(relative-anchors 22 8) ; 0,6,7,8
-(relative-anchors 22 20) ; 11,17,20
+;(relative-anchors 10 2) ;N=10, 2 => 0 1 2
+;(relative-anchors 10 6) ; 5, 6
+;(relative-anchors 22 8) ; 0,6,7,8
+;(relative-anchors 22 20) ; 11,17,20
 
 (defn names2nums [namedcell]
   (map (fn [[dim name]] (read-name2key keytab dim name))
     (map-indexed vector namedcell)))
 (def names2nums (memoize names2nums))
 
-(defn query-cube [cube cell N]
-  (let [dimwise-level-anchors (map #(relative-anchors N %1) (names2nums cell))
-        (comment (map (fn [[idx val]]
-                                     (relative-anchors N
-                                       (read-name2key keytab idx val)))
-                                   (map-indexed vector cell)))
+(defn query-cube [cube namedcell N]
+  (let [cell (names2nums namedcell)
+        dimwise-level-anchors (map #(relative-anchors N %1) cell)
+        ;(map (fn [[idx val]]
+        ;                             (relative-anchors N
+        ;                               (read-name2key keytab idx val)))
+        ;                           (map-indexed vector cell))
         dims (count dimwise-level-anchors)
         anchors (partition dims (apply interleave dimwise-level-anchors))]
     (reduce +
@@ -303,68 +305,6 @@ really-store?
       (recur (* 2 (inc N)))
       N)))
 
-(defn create-meta-data [file]
-  (let [data (slurp file) ; redo later to line-by-line it
-        keyset (loop [lines (.split data "\n") md-keyset [(sorted-set)
-                                               (sorted-set)
-                                               (sorted-set)]]
-      (if (seq lines)
-        (let [line (seq (.split (first lines) ","))]
-          (recur (next lines)
-                 [(clojure.set/union (first md-keyset) (sorted-set (first line)))
-                  (clojure.set/union (second md-keyset) (sorted-set (second line)))
-                  (clojure.set/union (nth md-keyset 2) (sorted-set (nth line 2)))]))
-        md-keyset))
-        counts (map count keyset)
-        N (calculate-N (apply max counts))]
-    (pprint (first (map-indexed (fn [dim keys]
-                                  (map (fn [half]
-                                         )
-                                       (partition-all (/ N 2) keys)))
-                                keyset)))
-    (println counts N)))
-
-;(create-meta-data "src/hbasey/22kdata.csv")
-
-(println (create-md-map "src/hbasey/22kdata.csv"))
-
-(defn create-md-map [file]
-  (let [data (slurp file)
-        lines (.split data "\n")
-        dims (count (first lines))
-        keyset (loop [lines (.split data "\n") md-keyset []]
-                 (if (seq lines)
-                   (let [line (seq (.split (first lines) ","))]
-                     (recur (next lines)
-                            (vec (map-indexed #(clojure.set/union (get md-keyset %1) (sorted-set %2)) line))))
-                   md-keyset))
-        counts (map count keyset)
-        N (calculate-N (apply max counts))
-        max-depth (Math/floor (/ (Math/log N) (Math/log 2)))] ; at leafs
-    (hb/with-table [mdtab (hb/table d-md-tbl)]
-      (doseq [[dim keys] (map-indexed vector [(first keyset)])]
-        (doseq [[idx name] (map-indexed vector keys)]
-          (let [v (nth (seq keys) idx)]
-            (println idx "=>" v)
-            ;(hb/put mdtab idx :value [d-md-fam (str dim "-anchor") v])
-            ))))
-    (println counts N)))
-
-
-;  (with-open [rdr (reader file)]
-;    (doseq [line (line-seq rdr)]
-;      (let [cell (seq (.split line ","))
-;            value 1] ; should come from somewhere...
-;        (add-row-to-cube cube origin [cell 1] N)))))
-
-(comment
-  (hb/with-table [mdtab (hb/table d-md-tbl)]
-    (doseq [[dim md] (map-indexed vector cube2d-meta)]
-      (doseq [[idx [k v]] (map-indexed vector (partition 2 md))]
-        (hb/put mdtab idx :value [d-md-fam (str dim "-anchor") v])
-        )))
-)
-
 (defn create-key-int-map [file]
   (let [data (slurp file)
         lines (.split data "\n")
@@ -393,77 +333,68 @@ really-store?
             value 1] ; should come from somewhere...
         (add-row-to-cube cube origin [cell 1] N)))))
 
-(comment
-
-
-  (time (println (apply list (sum-cube-borders tab [0 0] 10))))
-
-  (hb/with-table [tab (hb/table d-tbl)]
-    (println (for [day (range 6) st (range 3)]
-              [[day st] (read-sum-val tab [day st])])))
-
-
-  (time (println (query-cube tab mdtab [[2010 :q3] :wa]))) ; expecting 18
-
-)
 (defn app [args]
   (def tab (hb/table d-tbl))
-  (def mdtab (hb/table d-md-tbl))
   (def keytab (hb/table d-k-tbl))
 
-  (println (create-key-int-map "src/hbasey/22kdata.csv"))
+  (println "mapping keys to ints...")
+  ;41,1,134
+  (create-key-int-map "src/hbasey/22kdata.csv")
+  (println "inserting...")
   (println (insert-row-by-row tab [0 0 0] "src/hbasey/22kdata.csv" 190))
-  (println (apply list (sum-cube-borders tab [0 0 0] 190)))
+  (println "summing...")
+  (println (count (apply list (sum-cube-borders tab [0 0 0] 190))))
 
-  (println (create-md-map "src/hbasey/22kdata.csv"))
+  ;27,0,4
+  (println (map-indexed #(read-name2key keytab %1 %2) ["2011-03-17" "DL" "ATL"]))
+  (println (map-indexed #(read-key2name keytab %1 %2) [1 0 5]))
 
-  ; 27, 0, 4
-  (time (println (query-cube tab mdtab ["2011-03-17" "DL" "ATL"]))) ; expecting 16095
+  (query-cube tab (map-indexed #(read-key2name keytab %1 %2) [1 0 1]) 190)
+
+  (hb/with-table [tab (hb/table d-tbl)]
+    (pprint (for [day (range 6) st (range 6)]
+              [[day 0 st] (read-sum-val tab [day 0 st])])))
+
+  (time (println (query-cube tab ["2011-03-17" "DL" "ATL"] 190)))
 
   )
   
 (defn app-other [args]
   (def tab (hb/table d-tbl))
-  (def mdtab (hb/table d-md-tbl))
   (def keytab (hb/table d-k-tbl))
 
   (time
-    (let [mdtab (hb/table d-md-tbl)
-          keytab (hb/table d-k-tbl)]
+    (let [keytab (hb/table d-k-tbl)]
       (doseq [[dim md] (map-indexed vector cube2d-meta)]
         (doseq [[idx [k v]] (map-indexed vector (partition 2 md))]
-          ; for querying
-          (hb/put mdtab idx :value [d-md-fam (str dim "-anchor") v])
-          ;(println idx "=>" v)
           ; for building
           (hb/put keytab k :value [d-k-fam (str dim "-dimkey") idx])
           ;(println k "=>" idx)
           (hb/put keytab idx :value [d-k-fam (str dim "-namekey") k])
           ;(println idx "=>" k "\n")
           ))
-      (hb/release-table mdtab)
       (hb/release-table keytab)))
 
   (time (do
-          (add-row-to-cube tab [0 0] [[[2010 :q1] :ca] 2])
-          (add-row-to-cube tab [0 0] [[[2010 :q1] :wa] 2]) ; (0,2)
-          (add-row-to-cube tab [0 0] [[[2010 :q2] :ca] 5]) ; (1,0)
-          (add-row-to-cube tab [0 0] [[[2010 :q2] :or] 4]) ; (1,1)
-          (add-row-to-cube tab [0 0] [[[2010 :q2] :wa] 3]) ; (1,2)
-          (add-row-to-cube tab [0 0] [[[2010 :q3] :ca] 2])
-          (add-row-to-cube tab [0 0] [[[2010 :q4] :or] 2]) ; (3,1)
-          (add-row-to-cube tab [0 0] [[[2011 :q1] :wa] 4]) ; (4,2)
-          (add-row-to-cube tab [0 0] [[[2011 :q2] :ca] 2]) ; (5,0)
+          (add-row-to-cube tab [0 0] [[[2010 :q1] :ca] 2] 10)
+          (add-row-to-cube tab [0 0] [[[2010 :q1] :wa] 2] 10) ; (0,2)
+          (add-row-to-cube tab [0 0] [[[2010 :q2] :ca] 5] 10) ; (1,0)
+          (add-row-to-cube tab [0 0] [[[2010 :q2] :or] 4] 10) ; (1,1)
+          (add-row-to-cube tab [0 0] [[[2010 :q2] :wa] 3] 10) ; (1,2)
+          (add-row-to-cube tab [0 0] [[[2010 :q3] :ca] 2] 10)
+          (add-row-to-cube tab [0 0] [[[2010 :q4] :or] 2] 10) ; (3,1)
+          (add-row-to-cube tab [0 0] [[[2011 :q1] :wa] 4] 10) ; (4,2)
+          (add-row-to-cube tab [0 0] [[[2011 :q2] :ca] 2] 10) ; (5,0)
           ))
 
-  (time (println (apply list (sum-cube-borders tab [0 0] 10))))
+  (time (println (count (apply list (sum-cube-borders tab [0 0] 10)))))
 
   (hb/with-table [tab (hb/table d-tbl)]
     (println (for [day (range 6) st (range 3)]
               [[day st] (read-sum-val tab [day st])])))
 
 
-  (time (println (query-cube tab mdtab [[2010 :q3] :wa]))) ; expecting 18
+  (time (println (query-cube tab [[2010 :q3] :wa] 10))) ; expecting 18
 
   )
 
