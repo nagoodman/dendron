@@ -31,6 +31,7 @@
    [[2011 :q2] :wa] 15
    })
 
+;obsolete
 (def cube2d-meta
   ; dim-key [relative-key-anchor-at-top-level, next-level, ...]
   [[; first dimension
@@ -50,30 +51,31 @@
     ; 7 extra "unused"
     ]])
 
-; part2 is obsolete
-(def cube2d-meta-part2
-  [
-   [; first dimension (level 0 is the top, not the leaf)
-    {:level 0 :anchor-pairs '[ ([2010 :q1] [2011 :q2]) ]}
-    {:level 1 :anchor-pairs '[ ([2010 :q2] [2010 :q4])
-                              (nil nil)]};(z w)
-    ],
-   [; second dimension
-    {:level 0 :anchor-pairs '[ (:ca nil) ]} ; (:ca c)
-    {:level 1 :anchor-pairs '[ (:or nil) ; (:or a)
-                              (nil nil) ]} ;(d f)
-    ]])
 
-;(intern *ns* (symbol a) val)
+;0 => [0]
+;1 => [0, 1]
+;2 => [0, 1, 2]
+;3 => [0, 3]
+;4 => [0, 3, 4]
+;5 => [5]
+;6 => [5, 6]
+;7 => [5, 6, 7]
+;8 => [5, 8]
+;9 => [5, 8, 9]
 
 
-
-
-
-
-
-
-
+;0 => [0]
+;1 => [0, 1]
+;2 => [0, 1, 2]
+;3 => [0, 1, 2, 3]
+;4 => [0, 1, 4]
+;5 => [0, 1, 4, 5]
+;6 => [0, 6]
+;7 => [0, 6, 7]
+;8 => [0, 6, 7, 8]
+;9 => [0, 6, 9]
+;10 =>[0, 6, 9, 10]
+;11 =>[11]
 
 
 (comment

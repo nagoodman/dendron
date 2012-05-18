@@ -4,9 +4,12 @@
            [org.apache.hadoop.hbase.util Bytes])
   (:require [clojure-hbase.core :as hb]
             [clojure-hbase.admin :as hba]
-            [hbasey.dcubeutils :as dcu])
+            [hbasey.dcubeutils :as dcu]
+            [clojure.set])
   (:use [hbasey.testdata]
-        [hbasey.newmodel]))
+        [hbasey.newmodel]
+        [clojure.pprint]
+        [clojure.java.io]))
 
 (declare keytab tab add-row-to-cube sum-cube-borders query-cube clean-d-tbl)
 
@@ -29,7 +32,7 @@
   (hba/disable-table d-tbl)
   (hba/add-column-family d-tbl (hba/column-descriptor d-fam))
   (hba/enable-table d-tbl)
-  ; meta tbl
+  ; meta tbl (obsolete)
   (hba/create-table (hba/table-descriptor d-md-tbl))
   (hba/disable-table d-md-tbl)
   (hba/add-column-family d-md-tbl (hba/column-descriptor d-md-fam))
@@ -61,14 +64,15 @@
   (Bytes/toString (.getName x)))
 
 (defn read-str-vals [tab k column]
-  (let [value-vec (read-string (last (first
+  (let [value-vec (last (first
                     (hb/as-vector (hb/get tab k :column column)
                                   :map-family #(keyword (Bytes/toString %))
                                   :map-qualifier #(keyword (Bytes/toString %))
                                   :map-timestamp #(java.util.Date. %)
                                   :map-value #(Bytes/toString %)
-                                  str))))]
-    value-vec))
+                                  str)))]
+    (try (read-string value-vec)
+      (catch NumberFormatException e value-vec))))
 
 (defn read-long-vals [tab k column]
   (let [value-vec (last (first
@@ -80,7 +84,10 @@
                                   str)))]
     value-vec))
 
-(defn read-sum-val [tab dimensions]
+(defn read-sum-val
+  "0 means either not found or actually 0. To be sure if it doesn't exist,
+  use (cell-in-keys?)"
+  [tab dimensions]
   (try
     (let [res (read-long-vals tab dimensions [d-fam :sum])]
       ;(if-let [real (:goto res)]
@@ -105,7 +112,10 @@
 
 
 (defn read-md-val [tab dimension k]
-  (read-str-vals tab k [d-md-fam (str dimension "-anchor")]))
+  (print "md-val: " dimension k " ")
+  (let [res (read-str-vals tab k [d-md-fam (str dimension "-anchor")])]
+    (println "res: " res)
+    res))
 
 (defn read-name2key [tab dimension name]
   (read-long-vals tab name [d-k-fam (str dimension "-dimkey")]))
@@ -117,112 +127,57 @@
     (catch NullPointerException e nil)))
 (def read-key2name (memoize read-key2name))
 
-(defrecord Cube [table]
-  clojure.lang.IFn
-  (invoke [this] this)
-  (invoke [this cell] (read-sum-val table cell)) 
-  (applyTo [this args] (clojure.lang.AFn/applyToHelper this args)))
-
-(defn app [args]
-  (def tab (hb/table d-tbl))
-  (def mdtab (hb/table d-md-tbl))
-  (def keytab (hb/table d-k-tbl))
-
-
-  (time
-    (let [mdtab (hb/table d-md-tbl)
-          keytab (hb/table d-k-tbl)]
-      (doseq [[dim md] (map-indexed vector cube2d-meta)]
-        (doseq [[idx [k v]] (map-indexed vector (partition 2 md))]
-          ; for querying
-          (hb/put mdtab idx :value [d-md-fam (str dim "-anchor") v])
-          ;(println idx "=>" v)
-          ; for building
-          (hb/put keytab k :value [d-k-fam (str dim "-dimkey") idx])
-          ;(println k "=>" idx)
-          (hb/put keytab idx :value [d-k-fam (str dim "-namekey") k])
-          ;(println idx "=>" k "\n")
-          ))
-      (hb/release-table mdtab)
-      (hb/release-table keytab)))
-
-  (time (do
-          (add-row-to-cube tab [0 0] [[[2010 :q1] :ca] 2])
-          (add-row-to-cube tab [0 0] [[[2010 :q1] :wa] 2]) ; (0,2)
-          (add-row-to-cube tab [0 0] [[[2010 :q2] :ca] 5]) ; (1,0)
-          (add-row-to-cube tab [0 0] [[[2010 :q2] :or] 4]) ; (1,1)
-          (add-row-to-cube tab [0 0] [[[2010 :q2] :wa] 3]) ; (1,2)
-          (add-row-to-cube tab [0 0] [[[2010 :q3] :ca] 2])
-          (add-row-to-cube tab [0 0] [[[2010 :q4] :or] 2]) ; (3,1)
-          (add-row-to-cube tab [0 0] [[[2011 :q1] :wa] 4]) ; (4,2)
-          (add-row-to-cube tab [0 0] [[[2011 :q2] :ca] 2]) ; (5,0)
-          ))
-
-  (time (println (apply list (sum-cube-borders tab [0 0] 10))))
-
-  (hb/with-table [tab (hb/table d-tbl)]
-    (println (for [day (range 6) st (range 3)]
-              [[day st] (read-sum-val tab [day st])])))
-
-
-  (time (println (query-cube tab mdtab [[2010 :q3] :wa]))) ; expecting 18
-
-  )
-
-(comment
-
-(read-sum-val tab [[2010 :q2] :or])
-(read-sum-val tab [[2011 :q1] :ca])
-
-(read-sum-val tab [1 1])
-
-;(read-md-val mdtab [2010 :q2])
-
-(read-md-val mdtab 0 1)
-
-(read-key2name keytab 0 1) ; [2010 :q2]
-
-(read-name2key keytab 0 [2010 :q2]) ; 1
-
-(read-name2key keytab 0 [2010 :q1])
-
-
-
-(loop [cube table datas sparse2d]
-  (if (seq datas)
-    (recur (make-cube-v1 cube (first datas) cube2d-meta) (next datas))
-   cube)) ; should output cube2d
-
-);;;;
-
 (defn matching-borders [cell anchor]
   (map (fn [[i v]] (assoc anchor i v)) (map-indexed vector cell)))
 (def matching-borders (memoize matching-borders))
 
-(defn query-cube [cube cubemd cell]
-  (let [dimwise-level-anchors (map
-                                (fn [[idx val]]
-                                  (read-md-val cubemd idx (read-name2key keytab idx val)))
-                                (map-indexed vector cell))
-        dims (count dimwise-level-anchors)
-        anchors (partition dims (apply interleave dimwise-level-anchors))]
-    (reduce +
-            (map
-              ; this and the next map can be replaced with pmap but seems slower
-              (fn [anchor]
-                (let [bords (matching-borders cell (vec anchor))]
-                  (reduce + (map #(read-sum-val cube (vec (map-indexed (fn [dim n] (read-name2key keytab dim n)) %1)))
-                                  (conj bords anchor)))))
-              anchors))))
+(defn log2 [x]
+  (long (Math/floor (/ (Math/log x) (Math/log 2)))))
+
+(defn relative-anchors
+  "Return array of relative anchors, the 0th entry is the root-most
+  anchor, and so on, until it reaches itself."
+  ([N numkey] (relative-anchors 0 N numkey))
+  ([left N numkey]
+    (let [half (/ N 2)]
+      (loop [cur-key (if (>= numkey half) half left) anchors []]
+        (let [lst (conj anchors cur-key)]
+          (if (= cur-key numkey)
+            lst
+            (let [next-key numkey]
+              (recur next-key lst))))))))
+
+(comment      (conj (if (> half 1) ; recurse
+              (relative-anchors (if (>= numkey half) half left)
+                             (dec (/ N 2)) numkey))
+            left))
+
+(relative-anchors 10 2)
+;N=10, 2 => 0 1 2
+(relative-anchors 22 8) ; 0,6,7,8
+(relative-anchors 22 20) ; 11,17,20
 
 (defn names2nums [namedcell]
   (map (fn [[dim name]] (read-name2key keytab dim name))
     (map-indexed vector namedcell)))
 (def names2nums (memoize names2nums))
 
-(defmacro pand "parallel and" [& forms]
-  (let [r# (eval `(pvalues ~@forms))]
-    `(and ~@r#)))
+(defn query-cube [cube cell N]
+  (let [dimwise-level-anchors (map #(relative-anchors N %1) (names2nums cell))
+        (comment (map (fn [[idx val]]
+                                     (relative-anchors N
+                                       (read-name2key keytab idx val)))
+                                   (map-indexed vector cell)))
+        dims (count dimwise-level-anchors)
+        anchors (partition dims (apply interleave dimwise-level-anchors))]
+    (reduce +
+            ; this and the next map can be replaced with pmap but seems slower
+            (map
+              (fn [anch]
+                (let [anchor (vec anch)
+                      bords (matching-borders cell anchor)]
+                  (reduce + (map #(read-sum-val cube %1) (conj bords anchor)))))
+              anchors))))
 
 (defn get-dependent-anchors [origin cell N]
   ; includes cell itself if it's an anchor
@@ -341,4 +296,174 @@ really-store?
                         box))
          bord-regs)
     ))
+
+(defn calculate-N [limit]
+  (loop [N 4]
+    (if (< N limit)
+      (recur (* 2 (inc N)))
+      N)))
+
+(defn create-meta-data [file]
+  (let [data (slurp file) ; redo later to line-by-line it
+        keyset (loop [lines (.split data "\n") md-keyset [(sorted-set)
+                                               (sorted-set)
+                                               (sorted-set)]]
+      (if (seq lines)
+        (let [line (seq (.split (first lines) ","))]
+          (recur (next lines)
+                 [(clojure.set/union (first md-keyset) (sorted-set (first line)))
+                  (clojure.set/union (second md-keyset) (sorted-set (second line)))
+                  (clojure.set/union (nth md-keyset 2) (sorted-set (nth line 2)))]))
+        md-keyset))
+        counts (map count keyset)
+        N (calculate-N (apply max counts))]
+    (pprint (first (map-indexed (fn [dim keys]
+                                  (map (fn [half]
+                                         )
+                                       (partition-all (/ N 2) keys)))
+                                keyset)))
+    (println counts N)))
+
+;(create-meta-data "src/hbasey/22kdata.csv")
+
+(println (create-md-map "src/hbasey/22kdata.csv"))
+
+(defn create-md-map [file]
+  (let [data (slurp file)
+        lines (.split data "\n")
+        dims (count (first lines))
+        keyset (loop [lines (.split data "\n") md-keyset []]
+                 (if (seq lines)
+                   (let [line (seq (.split (first lines) ","))]
+                     (recur (next lines)
+                            (vec (map-indexed #(clojure.set/union (get md-keyset %1) (sorted-set %2)) line))))
+                   md-keyset))
+        counts (map count keyset)
+        N (calculate-N (apply max counts))
+        max-depth (Math/floor (/ (Math/log N) (Math/log 2)))] ; at leafs
+    (hb/with-table [mdtab (hb/table d-md-tbl)]
+      (doseq [[dim keys] (map-indexed vector [(first keyset)])]
+        (doseq [[idx name] (map-indexed vector keys)]
+          (let [v (nth (seq keys) idx)]
+            (println idx "=>" v)
+            ;(hb/put mdtab idx :value [d-md-fam (str dim "-anchor") v])
+            ))))
+    (println counts N)))
+
+
+;  (with-open [rdr (reader file)]
+;    (doseq [line (line-seq rdr)]
+;      (let [cell (seq (.split line ","))
+;            value 1] ; should come from somewhere...
+;        (add-row-to-cube cube origin [cell 1] N)))))
+
+(comment
+  (hb/with-table [mdtab (hb/table d-md-tbl)]
+    (doseq [[dim md] (map-indexed vector cube2d-meta)]
+      (doseq [[idx [k v]] (map-indexed vector (partition 2 md))]
+        (hb/put mdtab idx :value [d-md-fam (str dim "-anchor") v])
+        )))
+)
+
+(defn create-key-int-map [file]
+  (let [data (slurp file)
+        lines (.split data "\n")
+        dims (count (first lines))
+        keyset (loop [lines (.split data "\n") md-keyset []]
+                 (if (seq lines)
+                   (let [line (seq (.split (first lines) ","))]
+                     (recur (next lines)
+                            (vec (map-indexed #(clojure.set/union (get md-keyset %1) (sorted-set %2)) line))))
+                   md-keyset))
+        counts (map count keyset)
+        N (calculate-N (apply max counts))]
+    (let [keytab (hb/table d-k-tbl)]
+      (doseq [[dim keys] (map-indexed vector keyset)]
+        (doseq [[idx name] (map-indexed vector keys)]
+          (hb/put keytab name :value [d-k-fam (str dim "-dimkey") idx])
+          (hb/put keytab idx :value [d-k-fam (str dim "-namekey") name])
+          ))
+      (hb/release-table keytab))
+    (println counts N)))
+
+(defn insert-row-by-row [cube origin datafile N]
+  (with-open [rdr (reader datafile)]
+    (doseq [line (line-seq rdr)]
+      (let [cell (seq (.split line ","))
+            value 1] ; should come from somewhere...
+        (add-row-to-cube cube origin [cell 1] N)))))
+
+(comment
+
+
+  (time (println (apply list (sum-cube-borders tab [0 0] 10))))
+
+  (hb/with-table [tab (hb/table d-tbl)]
+    (println (for [day (range 6) st (range 3)]
+              [[day st] (read-sum-val tab [day st])])))
+
+
+  (time (println (query-cube tab mdtab [[2010 :q3] :wa]))) ; expecting 18
+
+)
+(defn app [args]
+  (def tab (hb/table d-tbl))
+  (def mdtab (hb/table d-md-tbl))
+  (def keytab (hb/table d-k-tbl))
+
+  (println (create-key-int-map "src/hbasey/22kdata.csv"))
+  (println (insert-row-by-row tab [0 0 0] "src/hbasey/22kdata.csv" 190))
+  (println (apply list (sum-cube-borders tab [0 0 0] 190)))
+
+  (println (create-md-map "src/hbasey/22kdata.csv"))
+
+  ; 27, 0, 4
+  (time (println (query-cube tab mdtab ["2011-03-17" "DL" "ATL"]))) ; expecting 16095
+
+  )
+  
+(defn app-other [args]
+  (def tab (hb/table d-tbl))
+  (def mdtab (hb/table d-md-tbl))
+  (def keytab (hb/table d-k-tbl))
+
+  (time
+    (let [mdtab (hb/table d-md-tbl)
+          keytab (hb/table d-k-tbl)]
+      (doseq [[dim md] (map-indexed vector cube2d-meta)]
+        (doseq [[idx [k v]] (map-indexed vector (partition 2 md))]
+          ; for querying
+          (hb/put mdtab idx :value [d-md-fam (str dim "-anchor") v])
+          ;(println idx "=>" v)
+          ; for building
+          (hb/put keytab k :value [d-k-fam (str dim "-dimkey") idx])
+          ;(println k "=>" idx)
+          (hb/put keytab idx :value [d-k-fam (str dim "-namekey") k])
+          ;(println idx "=>" k "\n")
+          ))
+      (hb/release-table mdtab)
+      (hb/release-table keytab)))
+
+  (time (do
+          (add-row-to-cube tab [0 0] [[[2010 :q1] :ca] 2])
+          (add-row-to-cube tab [0 0] [[[2010 :q1] :wa] 2]) ; (0,2)
+          (add-row-to-cube tab [0 0] [[[2010 :q2] :ca] 5]) ; (1,0)
+          (add-row-to-cube tab [0 0] [[[2010 :q2] :or] 4]) ; (1,1)
+          (add-row-to-cube tab [0 0] [[[2010 :q2] :wa] 3]) ; (1,2)
+          (add-row-to-cube tab [0 0] [[[2010 :q3] :ca] 2])
+          (add-row-to-cube tab [0 0] [[[2010 :q4] :or] 2]) ; (3,1)
+          (add-row-to-cube tab [0 0] [[[2011 :q1] :wa] 4]) ; (4,2)
+          (add-row-to-cube tab [0 0] [[[2011 :q2] :ca] 2]) ; (5,0)
+          ))
+
+  (time (println (apply list (sum-cube-borders tab [0 0] 10))))
+
+  (hb/with-table [tab (hb/table d-tbl)]
+    (println (for [day (range 6) st (range 3)]
+              [[day st] (read-sum-val tab [day st])])))
+
+
+  (time (println (query-cube tab mdtab [[2010 :q3] :wa]))) ; expecting 18
+
+  )
 
