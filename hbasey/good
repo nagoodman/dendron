@@ -1,0 +1,100 @@
+"Elapsed time: 244.072923 msecs"
+"Elapsed time: 478.272519 msecs"
+summing borders-o
+([[[1 0] [4 0]] [[0 1] [0 4]]]
+ [[[1 5] [4 5]] [[0 6] [0 9]]]
+ [[[6 0] [9 0]] [[5 1] [5 4]]]
+ [[[6 5] [9 5]] [[5 6] [5 9]]])
+using those bords
+((reading [1 0] ([2010 :q2] ca) as  5
+inloop, [4 0] 0 [1 0] 5
+storing [2 0] = 5
+inloop, [4 0] 0 [2 0] 7
+storing [3 0] = 7
+inloop, [4 0] 0 [3 0] 7
+storing [4 0] = 7
+inloop, [4 0] 0 [4 0] 7
+reading [0 1] ([2010 :q1] or) as  nil
+inloop, [0 4] 1 [0 1] 0
+storing [0 2] = 0
+inloop, [0 4] 1 [0 2] 2
+nil nil) (nil nil) (reading [5 1] ([2011 :q2] or) as  6
+inloop, [5 4] 1 [5 1] 6
+storing [5 2] = 6
+inloop, [5 4] 1 [5 2] 15
+nil nil) (nil nil))
+"Elapsed time: 85.45891 msecs"
+query time
+reading [0 0] ([2010 :q1] ca) as  2
+reading [2 0] ([2010 :q3] ca) as  7
+reading [0 2] ([2010 :q1] wa) as  2
+reading [1 1] ([2010 :q2] or) as  4
+reading [2 1] ([2010 :q3] or) as  nil
+reading [1 2] ([2010 :q2] wa) as  3
+reading [2 2] ([2010 :q3] wa) as  nil
+reading [2 2] ([2010 :q3] wa) as  nil
+reading [2 2] ([2010 :q3] wa) as  nil
+18
+"Elapsed time: 45.587359 msecs"
+relative anchors sanity check
+(0)
+(0 1)
+(0 1 2)
+(0 3)
+(0 3 4)
+(5)
+(5 6)
+(5 6 7)
+(5 8)
+(5 8 9)
+"Elapsed time: 1187.221004 msecs"
+mapping keys to ints...
+(41 1 134) 190
+inserting...
+nil
+summing...
+([[[1 0] [4 0]] [[0 1] [0 4]]]
+ [[[1 5] [4 5]] [[0 6] [0 9]]]
+ [[[6 0] [9 0]] [[5 1] [5 4]]]
+ [[[6 5] [9 5]] [[5 6] [5 9]]])
+using those bords
+((nil nil nil nil nil nil nil nil) (nil nil nil nil nil nil nil nil nil) (nil nil nil nil nil nil nil nil nil) (nil nil nil nil nil nil nil nil nil) (nil nil nil nil nil nil nil nil nil) (nil nil nil nil nil nil nil nil nil) (nil nil nil nil nil nil nil nil nil) (nil nil nil nil nil nil nil nil nil) (nil nil nil nil nil nil nil nil nil))
+reading [0 0 0] (2010-01-14 DL ABQ) as  2
+reading [1 0 0] (2010-01-15 DL ABQ) as  nil
+reading [0 0 0] (2010-01-14 DL ABQ) as  2
+reading [0 0 1] (2010-01-14 DL AGS) as  nil
+querying
+(27 0 4)
+reading [0 0 0] (2010-01-14 DL ABQ) as  2
+reading [27 0 0] (2011-03-17 DL ABQ) as  2
+reading [0 0 0] (2010-01-14 DL ABQ) as  2
+reading [0 0 4] (2010-01-14 DL ATL) as  262
+268
+"Elapsed time: 39.569276 msecs"
+(2011-12-16 DL VPS)
+reading [0 0 95] (2010-01-14 DL ORF) as  651
+reading [40 0 95] (2011-12-16 DL ORF) as  5
+reading [0 0 95] (2010-01-14 DL ORF) as  651
+reading [0 0 133] (2010-01-14 DL VPS) as  nil
+1307
+"Elapsed time: 24.009754 msecs"
+reading [0 0 0] (2010-01-14 DL ABQ) as  2
+reading [36 0 0] (2011-09-16 DL ABQ) as  3
+reading [0 0 0] (2010-01-14 DL ABQ) as  2
+reading [0 0 27] (2010-01-14 DL DCA) as  17
+24
+"Elapsed time: 17.07284 msecs"
+(2010-01-14 DL ORF)
+reading [0 0 95] (2010-01-14 DL ORF) as  651
+reading [0 0 95] (2010-01-14 DL ORF) as  651
+reading [0 0 95] (2010-01-14 DL ORF) as  651
+reading [0 0 95] (2010-01-14 DL ORF) as  651
+2604
+"Elapsed time: 21.53039 msecs"
+(2010-02-13 DL ALB)
+reading [0 0 0] (2010-01-14 DL ABQ) as  2
+reading [2 0 0] (2010-02-13 DL ABQ) as  3
+reading [0 0 0] (2010-01-14 DL ABQ) as  2
+reading [0 0 2] (2010-01-14 DL ALB) as  nil
+7
+"Elapsed time: 75078.248793 msecs"

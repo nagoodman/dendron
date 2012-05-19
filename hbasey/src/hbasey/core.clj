@@ -19,9 +19,13 @@
 (def d-k-tbl "hbase-keymap-table")
 (def d-k-fam "dkfam")
 
-(declare app)
+(declare app app-other)
 (defn -main [& args]
-  (if (hba/master-running?) (do (clean-d-tbl) (time (app args)))))
+  (if (hba/master-running?)
+    (do
+      (clean-d-tbl)
+      (time (app-other args))
+      (time (app args)))))
 
 
 (defn create-d-tbl []
@@ -74,16 +78,22 @@
                                   str)))]
     value-vec))
 
+(defn read-key2name [tab dimension k]
+  (try
+    (read-str-vals tab k [d-k-fam (str dimension "-namekey")])
+    (catch NullPointerException e nil)))
+(def read-key2name (memoize read-key2name))
+
 (defn read-sum-val
   "0 means either not found or actually 0. To be sure if it doesn't exist,
   use (cell-in-keys?)"
   [tab dimensions]
-  ;(print "reading" dimensions)
+  (print "reading" dimensions (map-indexed #(read-key2name keytab %1 %2) dimensions))
   (try
     (let [res (read-long-vals tab dimensions [d-fam :sum])]
       ;(if-let [real (:goto res)]
       ;  (read-sum-val tab real)
-      ;(println " as " res)
+      (println " as " res)
       (or res 0));)
     (catch NullPointerException e 0)))
 
@@ -107,12 +117,6 @@
   (read-long-vals tab name [d-k-fam (str dimension "-dimkey")]))
 (def read-name2key (memoize read-name2key))
 
-(defn read-key2name [tab dimension k]
-  (try
-    (read-str-vals tab k [d-k-fam (str dimension "-namekey")])
-    (catch NullPointerException e nil)))
-(def read-key2name (memoize read-key2name))
-
 (defn matching-borders [cell anchor]
   (map (fn [[i v]] (assoc anchor i v)) (map-indexed vector cell)))
 (def matching-borders (memoize matching-borders))
@@ -135,29 +139,6 @@
         nil))))
 
 
-
-
-
-
-    (comment (let [half (/ N 2)]
-      (loop [cur-key (if (>= numkey half) half left) anchors []]
-        (let [lst (conj anchors cur-key)]
-          (if (= cur-key numkey)
-            lst
-            (let [next-key numkey]
-              (recur next-key lst)))))))
-
-
-(comment      (conj (if (> half 1) ; recurse
-              (relative-anchors (if (>= numkey half) half left)
-                             (dec (/ N 2)) numkey))
-            left))
-
-;(relative-anchors 10 2) ;N=10, 2 => 0 1 2
-;(relative-anchors 10 6) ; 5, 6
-;(relative-anchors 22 8) ; 0,6,7,8
-;(relative-anchors 22 20) ; 11,17,20
-
 (defn names2nums [namedcell]
   (map (fn [[dim name]] (read-name2key keytab dim name))
     (map-indexed vector namedcell)))
@@ -166,10 +147,6 @@
 (defn query-cube [cube namedcell N]
   (let [cell (names2nums namedcell)
         dimwise-level-anchors (map #(relative-anchors N %1) cell)
-        ;(map (fn [[idx val]]
-        ;                             (relative-anchors N
-        ;                               (read-name2key keytab idx val)))
-        ;                           (map-indexed vector cell))
         dims (count dimwise-level-anchors)
         anchors (partition dims (apply interleave dimwise-level-anchors))]
     (reduce +
@@ -279,8 +256,6 @@ really-store?
       (if (every? identity sub-ranges) (conj sub-ranges ranges) ranges))
     nil))
 
-;(pprint (get-all-border-regions [0 0] 10))
-
 ;called at the end of the initial cube-creation process
 (defn sum-cube-borders [cube origin N]
   (let [dim (count origin)
@@ -289,12 +264,14 @@ really-store?
            (map-indexed (fn [idx [start end]]
                           (if (cell-in-keys? start)
                             (loop [cell start, value (read-sum-val cube start)]
-                              (if (and (< (nth cell idx) (nth end idx))
+                              (println "inloop," end idx cell value)
+                              (if (and (< (nth cell idx)
+                                          (nth end idx))
                                        (or value (not= cell start)))
                                 (let [next-cell (assoc cell idx (inc (nth cell idx)))]
                                   (if (cell-in-keys? next-cell)
-                                    (recur next-cell
-                                           (store-sum-val cube next-cell value))))))))
+                                    (do (println "storing" next-cell "=" value)(recur next-cell
+                                           (store-sum-val cube next-cell value)))))))))
                         box))
          bord-regs)
     ))
@@ -343,19 +320,36 @@ really-store?
   (println "inserting...")
   (println (insert-row-by-row tab [0 0 0] "src/hbasey/22kdata.csv" 190))
   (println "summing...")
-  (println (count (apply list (sum-cube-borders tab [0 0 0] 190))))
+  (binding [*print-right-margin* 100] (pprint (get-all-border-regions [0 0] 10)))
+  ;(pprint (get-all-border-regions [0 0 0] 190))
+  (println "using those bords")
+  (println (apply list (sum-cube-borders tab [0 0 0] 190)))
 
-  ;27,0,4
-  (println (map-indexed #(read-name2key keytab %1 %2) ["2011-03-17" "DL" "ATL"]))
-  (println (map-indexed #(read-key2name keytab %1 %2) [1 0 5]))
 
   (query-cube tab (map-indexed #(read-key2name keytab %1 %2) [1 0 1]) 190)
 
-  (hb/with-table [tab (hb/table d-tbl)]
-    (pprint (for [day (range 6) st (range 6)]
-              [[day 0 st] (read-sum-val tab [day 0 st])])))
+  ;(hb/with-table [tab (hb/table d-tbl)]
+  ;  (let [_ (map #(str (ffirst %1) "," (nth (first %1) 2) "," (second %1) "\n")
+  ;               (filter #(not (zero? (second %1)))
+  ;                       (for [day (range 41) st (range 134)]
+  ;                         [[day 0 st] (read-sum-val tab [day 0 st])])))]
+  ;    ["stored " (count _) " of total " (* 41 133)]))
 
+  ;27,0,4
+  (println "querying")
+  (println (map-indexed #(read-name2key keytab %1 %2) ["2011-03-17" "DL" "ATL"]))
   (time (println (query-cube tab ["2011-03-17" "DL" "ATL"] 190)))
+
+  (println (map-indexed #(read-key2name keytab %1 %2) [40 0 133]))
+  (time (println (query-cube tab ["2011-12-16" "DL" "VPS"] 190)))
+
+  (time (println (query-cube tab ["2011-09-16" "DL" "DCA"] 190)))
+
+  (println (map-indexed #(read-key2name keytab %1 %2) [0 0 95]))
+  (time (println (query-cube tab ["2010-01-14" "DL" "ORF"] 190)))
+
+  (println (map-indexed #(read-key2name keytab %1 %2) [2 0 2]))
+  (println (query-cube tab ["2010-02-13" "DL" "ALB"] 190))
 
   )
   
@@ -387,14 +381,35 @@ really-store?
           (add-row-to-cube tab [0 0] [[[2011 :q2] :ca] 2] 10) ; (5,0)
           ))
 
-  (time (println (count (apply list (sum-cube-borders tab [0 0] 10)))))
+  (println "summing borders-o")
+  (pprint (get-all-border-regions [0 0] 10))
+  (println "using those bords")
+  (time (println (apply list (sum-cube-borders tab [0 0] 10))))
 
-  (hb/with-table [tab (hb/table d-tbl)]
-    (println (for [day (range 6) st (range 3)]
-              [[day st] (read-sum-val tab [day st])])))
+  ;(hb/with-table [tab (hb/table d-tbl)]
+  ;  (println (for [day (range 6) st (range 3)]
+  ;            [[day st] (read-sum-val tab [day st])])))
 
 
+  (println "query time")
   (time (println (query-cube tab [[2010 :q3] :wa] 10))) ; expecting 18
+  ; 13 means the result of sum-cube-borders didn't run
+
+  (println "relative anchors sanity check")
+  (println (relative-anchors 10 0))
+  (println (relative-anchors 10 1))
+  (println (relative-anchors 10 2))
+  (println (relative-anchors 10 3))
+  (println (relative-anchors 10 4))
+  (println (relative-anchors 10 5))
+  (println (relative-anchors 10 6))
+  (println (relative-anchors 10 7))
+  (println (relative-anchors 10 8))
+  (println (relative-anchors 10 9))
+  ;(relative-anchors 10 2) ;N=10, 2 => 0 1 2
+  ;(relative-anchors 10 6) ; 5, 6
+  ;(relative-anchors 22 8) ; 0,6,7,8
+  ;(relative-anchors 22 20) ; 11,17,20
 
   )
 
