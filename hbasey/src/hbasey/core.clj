@@ -21,7 +21,8 @@
 
 (declare app app-other)
 (defn -main [& args]
-  (if (hba/master-running?)
+  (println args)
+  (if (and false (hba/master-running?))
     (do
       (clean-d-tbl)
       (time (app-other args))

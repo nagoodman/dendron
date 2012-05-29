@@ -6,10 +6,6 @@
 (def op +)
 (def arc-op -)
 
-(defn keydist
-  "Given 2 keys in the same dimension, how 'far' apart are they?"
-  [key1 key2]
-  (Math/abs (double (- key1 key2))))
 
 (defn keydiff [key1 key2]
   (- key1 key2))
@@ -18,13 +14,6 @@
   (+ key1 key2))
 
 
-(defn anchor-slots [origin N] ; size 2^dim of origin
-  (apply combin/cartesian-product (map #(range %1 (+ %1 N) (/ N 2)) origin)))
-(def anchor-slots (memoize anchor-slots))
-
-(defn gen-centers [anchors length]
-  (map (fn [anchor] (map #(+ length %1) anchor)) anchors))
-(def gen-centers (memoize gen-centers))
 
 (defn shared-anchor [anchors bordercell]
   ; find the anchor such that only one dimension key is different
@@ -49,41 +38,10 @@
         (and (> diff1 diff2) anchor2)
         (and (> diff2 diff1) anchor))))
 
-(defn intersecting-borders [cell anch]
-  ; for each dimension of cell, start from the anchor and travel
-  ; in the current dimension until the keys are the same, and take this
-  ; cell.
-  (let [anchor (vec anch)]
-    (keep-indexed (fn [idx dim]
-                    (let [oldval (nth anchor idx)]
-                      (assoc anchor idx (keysum oldval (keydiff dim oldval)))))
-                  cell)))
 
 ; currently does not work in 3D...
 ; the "not-any" is too restrictive. perhaps it's better phrased
 ; as "no more than d-1"?
-(defn where-is-cell "http://www.youtube.com/watch?v=JwRzi-E1l40" [cell origin N]
-  (let [anchors (anchor-slots origin N)
-        length (/ N 4)
-        in-hypercube? (fn [center] ; returns the given center point of
-                        ; a hypercube if the a cell is within its boundaries
-                        ; (assuming its boundaries are N/4 in length in each
-                        ; dimension)
-                        (let [diffs (map keydist cell center)]
-                          (if (not-any? #(>= %1 length) diffs)
-                            ; this is the center that this cell belongs in
-                            center
-                            ; else we're in a border-cell
-                            false)))]
-    (if (some #(>= %1 N) (map keydiff cell origin)) :outside
-      (if (not= -1 (.indexOf anchors cell))
-        :anchor
-        ; check quadrants in parallel, if nil, it's a border cell
-        (if-let [center-q (some identity (pmap in-hypercube?
-                                               (gen-centers anchors length)))]
-          center-q
-          :border)))))
-(def where-is-cell (memoize where-is-cell))
 
 
 (defn query-ddc-range "returns ranged agg from origin to cell"
