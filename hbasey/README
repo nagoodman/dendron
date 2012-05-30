@@ -1,0 +1,63 @@
+## Pre-requisites
+
+Make sure you have installed lein. Get it here: https://github.com/technomancy/leiningen
+
+Navigate to this folder with the shell and then enter `lein deps`. This will
+download all dependencies. You may get a ZipException because apparently since
+this project began one of the sub-dependencies is no longer available at its
+old location. I included a copy of asm-3.1.jar in the repo, so if you get
+the exception you have to install it to the local maven repo like so:
+
+`mvn install:install-file -DgroupId=asm -DartificatId=asm -Dversion=3.1 -Dpackaging=jar -Dfile=/path/to/asm-3.1.jar`
+
+To launch a repl manually, just run `lein repl`.
+
+You can create an uber-jar that packages up the code and all the dependencies into one standalone jar file. `lein uberjar`. If you have one already just run it like a normal jar file.
+
+## Purpose and Usage
+
+This project encompasses two core functions related to Big Data Cubing.
+
+1. Construction of the cube for later querying.
+2. Querying the cube.
+
+As a sub-function, the full environment is provided for debug and information gathering via the repl.
+
+## Constructing the Cube
+
+Presently we read in from CSV files and output to DynamoDB. Each row
+must have the same number of fields. The final value
+of the CSV row will be taken as the value to use in the cube construction,
+if it is numeric. If it is not numeric, the default is to use the value 1
+and the data will be interpreted as counts.
+
+Before beginning make sure you place any necessary AWS credentials in "credentials.clj", there is a template included in this directory.
+
+From the repl:
+
+(construct-cube "cubename" "csvlocation")
+
+If desired you can specify even more csv files:
+
+(construct-cube "cubename" "csvlocation" "csvlocation2" ...)
+
+Note this currently requires two passes on the data.
+
+## Querying the Cube
+
+All queries return the aggregate from the start of the cube (i.e. the origin
+[0 0 ... 0]) to the designated endpoint.
+
+(query-cube "cubename" ["ending" "point" "cell"])
+
+Each dimension's keys are ordered and map to a numeric. The numeric is determined by the sort-order of the unique keys seen in the initial CSV file(s).
+
+If you already know the numerics for a particular end cell:
+
+(query-cube "cubename" ^:numeric [0 1 2])
+
+It's on the TODO to allow for more powerful/interesting queries.
+
+## License
+
+Copyright (C) 2012 DynamoBI

@@ -41,18 +41,17 @@
     (map-indexed vector namedcell)))
 (def names2nums (memoize names2nums))
 
-(defn query-cube [cube namedcell keytab N kind] ; set kind=:sum
-  (let [cell (names2nums keytab namedcell)
-        dimwise-level-anchors (map #(relative-anchors N %1) cell)
+(defn query [cube keytab cell N kind] ; set kind=:sum
+  (let [dimwise-level-anchors (map #(relative-anchors N %1) cell)
         dims (count dimwise-level-anchors)
         anchors (partition dims (apply interleave dimwise-level-anchors))]
+    (println "cell:" cell "anchors:" anchors)
     (reduce +
-            ; this and the next map can be replaced with pmap but seems slower
             (pmap
               (fn [anch]
                 (let [anchor (vec anch)
                       bords (matching-borders cell anchor)]
-                  (reduce + (pmap #(read-val cube %1 kind) (set (conj bords anchor))))))
+                  (reduce + (pmap #(do (read-val cube %1 kind)) (set (conj bords anchor))))))
               anchors))))
 
 ; creation related
@@ -102,12 +101,15 @@
 
 (defn where-is-cell "http://www.youtube.com/watch?v=JwRzi-E1l40" [cell origin N]
   (let [anchors (anchor-slots origin N)
+        d-1 (dec (count origin))
         length (/ N 4)
         in-hypercube? (fn [center] ; returns the given center point of
                         ; a hypercube if the a cell is within its boundaries
                         ; (assuming its boundaries are N/4 in length in each
                         ; dimension)
                         (let [diffs (map keydist cell center)]
+                          ; not-any may be wrong; no more than d-1?
+                          ;(if (< (count (filter #(>= %1 length) diffs)) d-1)
                           (if (not-any? #(>= %1 length) diffs)
                             ; this is the center that this cell belongs in
                             center
@@ -213,22 +215,26 @@
       N)))
 
 ; for initial key-load
-(defn create-key-int-map [file keytab]
-  (let [data (slurp file)
-        lines (.split data "\n")
+(defn create-key-int-map [files keytab]
         dims (count (first lines))
-        keyset (loop [lines (.split data "\n") md-keyset []]
-                 (if (seq lines)
-                   (let [line (seq (.split (first lines) ","))]
-                     (recur (next lines)
-                            (vec (map-indexed #(clojure.set/union (get md-keyset %1) (sorted-set %2)) line))))
-                   md-keyset))
+  (doseq [file files]
+    (with-open [rdr (reader file)]
+      (doseq [line (line-seq rdr)]
+        (let [cell (seq (.split line ","))
+              keyset (loop [md-keyset []]
+                       (recur (vec (map-indexed #(clojure.set/union (get md-keyset %1) (sorted-set %2)) cell))))
+                   md-keyset
         counts (map count keyset)
         N (calculate-N (apply max counts))]
     (doseq [[dim keys] (map-indexed vector keyset)]
       (doseq [[idx name] (map-indexed vector keys)]
-        (store-raw keytab name [(str dim "-dimkey") idx])
-        (store-raw keytab idx [(str dim "-namekey") name])
+        ;(store-raw keytab name [(str dim "-dimkey") idx])
+        ;(store-raw keytab idx [(str dim "-namekey") name])
+
+        ;new
+        (store-raw keytab (str dim "-dimkey-" idx) k)
+        ;(println k "=>" idx)
+        (store-raw keytab (str dim "-namekey-" k) idx)
         ))
     (println counts N)))
 
@@ -237,7 +243,7 @@
     (doseq [line (line-seq rdr)]
       (let [cell (seq (.split line ","))
             value 1] ; should come from somewhere...
-        (add-row-to-cube cube keytab origin [cell 1] N)))))
+        (add-row-to-cube cube keytab origin [cell 1] N :sum)))))
 
 
 ; better border-sum...

@@ -10,3 +10,4 @@ hbasey/native
 hbasey/.lein-failures
 hbasey/checkouts
 hbasey/.lein-deps-sum
+hbasey/credentials.clj

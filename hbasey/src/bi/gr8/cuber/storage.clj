@@ -13,6 +13,8 @@
             [clojure-hbase.admin :as hba]
             [rotary.client :as dyndb]))
 
+(load-file "credentials.clj")
+
 (def d-hb-fam "dfam")
 (def d-k-hb-fam "dkfam")
 (def d-dyn-fam {:name "d-sum" :type "S"})
@@ -52,19 +54,30 @@
     (create-table tbl :hbase d-hb-fam)
     (create-table ktbl :hbase d-k-hb-fam)))
 
+(defn dyndb-table [name]
+  {:name name :cred {:access-key accessKey :secret-key secretKey}})
+
+(defn dyndb-key-table [name]
+  (dyndb-table (str name "-keymd")))
+
+(defn get-N [keytab]
+  10
+  )
+
+(defn get-origin-N [keytab]
+  [[0 0] 10])
 
 (defn dyndb-debug []
 
-  (def secretKey "")
-  (def accessKey "")
-  (def creds {:access-key accessKey :secret-key secretKey})
-  (def tbl {:name "dyndb-debug-data-table" :cred creds})
-  (def ktbl {:name "dyndb-debug-key-table" :cred creds})
-
+;  (def creds )
+;  (def tbl {:name "dyndb-debug-data-table" :cred creds})
+;  (def ktbl {:name "dyndb-debug-key-table" :cred creds})
+(comment
   (try (clean-table tbl :dyndb)
     (catch Exception e nil))
   (try (clean-table ktbl :dyndb)
     (catch Exception e nil))
+  (Thread/sleep 30000)
 
   (create-table tbl :dyndb
     {:hash-key d-dyn-fam :throughput {:read 10 :write 5}})
@@ -74,7 +87,7 @@
 
 
   (dyndb/describe-table (:cred tbl) (:name tbl))
-
+)
   ;(store-val tbl [0 0] 3 :sum)
 
 
