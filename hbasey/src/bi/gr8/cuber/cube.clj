@@ -9,6 +9,7 @@
             [clojure.set])
   (:use [bi.gr8.cuber storage]
         [clojure.pprint]
+        [clojure.repl]
         [clojure.java.io]))
 
 (defn log2 [x]
@@ -34,11 +35,14 @@
           (conj (relative-anchors (inc half) next-n numkey) half)
           (conj (relative-anchors (inc left) next-n numkey) left))
         nil))))
+(def relative-anchors (memoize relative-anchors))
 
 
 (defn names2nums [keytab namedcell]
-  (map (fn [[dim name]] (read-name2key keytab dim name))
-    (map-indexed vector namedcell)))
+  (let [res (map (fn [[dim name]] (read-name2key keytab dim name))
+                 (map-indexed vector namedcell))]
+    (if *noisy?* (println "Converted" namedcell "to" res))
+    res))
 (def names2nums (memoize names2nums))
 
 (defn query [cube keytab cell N kind] ; set kind=:sum
@@ -65,6 +69,7 @@
   (if (= N 1) (list cell)
     (let [anchors (anchor-slots origin N)]
       (filter (fn [anchor] (every? (fn [[ai ci]] (>= ai ci)) (partition 2 (interleave anchor cell)))) anchors))))
+(def get-dependent-anchors (memoize get-dependent-anchors))
 
 (defn get-opposing-border [origin anchor cell N]
   (map #(let [sum (+ %2 (/ N 2))]
@@ -78,7 +83,7 @@
 (defn cell-in-keys? [keytab cell]
   (every? (fn [[dim k]] (read-key2name keytab dim k))
     (map-indexed vector cell)))
-;(def cell-in-keys? (memoize cell-in-keys?))
+(def cell-in-keys? (memoize cell-in-keys?))
 
 (defn intersecting-borders [cell anch]
   ; for each dimension of cell, start from the anchor and travel
@@ -89,6 +94,7 @@
                     (let [oldval (nth anchor idx)]
                       (assoc anchor idx (+ oldval (- dim oldval)))))
                   cell)))
+(def intersecting-borders (memoize intersecting-borders))
 
 (defn keydist
   "Given 2 keys in the same dimension, how 'far' apart are they?"
@@ -99,6 +105,8 @@
   (map (fn [anchor] (map #(+ length %1) anchor)) anchors))
 (def gen-centers (memoize gen-centers))
 
+; this function seems to have difficulties sometimes in 3+ dimensions... I'm seeing
+; an off-by-x error.
 (defn where-is-cell "http://www.youtube.com/watch?v=JwRzi-E1l40" [cell origin N]
   (let [anchors (anchor-slots origin N)
         d-1 (dec (count origin))
@@ -134,6 +142,7 @@
     (cond
       (= location :anchor)
         (let [anchors-to-update (get-dependent-anchors origin cell N)]
+          (if *noisy?* (println cell :anchor))
           (doseq [anchor anchors-to-update]
             (if (cell-in-keys? keytab anchor)
               (store-val cube anchor data kind))))
@@ -143,6 +152,7 @@
               to-updates (if (not= cell border-to-update)
                           (conj anchors-to-update border-to-update cell)
                           (conj anchors-to-update border-to-update))]
+          (if *noisy?* (println cell :border))
           (doseq [to-update to-updates]
             (if (cell-in-keys? keytab to-update)
               (store-val cube to-update data kind))))
@@ -155,6 +165,7 @@
                                                           origin anchor %1 N)]
                                                 (if (= ret %1) nil ret))
                                              intersecting-borders))]
+          (if *noisy?* (println cell :recur location))
           (doseq [to-update (concat anchors-to-update borders-to-update)]
             (if (cell-in-keys? keytab to-update)
               (store-val cube to-update data kind)))
@@ -193,8 +204,8 @@
 (defn sum-cube-borders [cube keytab origin N]
   (let [dim (count origin)
         bord-regs (get-all-border-regions origin N)]
-    (map (fn [box]
-           (map-indexed (fn [idx [start end]]
+    (dorun (map (fn [box]
+           (dorun (map-indexed (fn [idx [start end]]
                           (if (cell-in-keys? keytab start)
                             (loop [cell start, value (read-val cube start :sum)]
                               (if (and (< (nth cell idx)
@@ -204,9 +215,8 @@
                                   (if (cell-in-keys? keytab next-cell)
                                     (recur next-cell
                                            (store-val cube next-cell value :sum))))))))
-                        box))
-         bord-regs)
-    ))
+                        box)))
+         bord-regs))))
 
 (defn calculate-N [limit]
   (loop [N 4]
@@ -216,37 +226,57 @@
 
 ; for initial key-load
 (defn create-key-int-map [files keytab]
-        dims (count (first lines))
-  (doseq [file files]
-    (with-open [rdr (reader file)]
-      (doseq [line (line-seq rdr)]
-        (let [cell (seq (.split line ","))
-              keyset (loop [md-keyset []]
-                       (recur (vec (map-indexed #(clojure.set/union (get md-keyset %1) (sorted-set %2)) cell))))
-                   md-keyset
-        counts (map count keyset)
+  (let [sets (pmap
+            (fn [file]
+              (with-open [rdr (reader file)]
+                (let [firstline (.split (first (line-seq rdr)) ",")
+                      last-datum? (try (Integer/parseInt (last firstline)) true
+                                    (catch Exception e false))
+                      keyset (loop [lines (line-seq rdr) md-keyset []]
+                               (if (seq lines)
+                                 (let [line (.split (first lines) ",")
+                                       cell (if last-datum? (drop-last line) (seq line))]
+                                   (recur (next lines)
+                                          (vec (map-indexed #(clojure.set/union (get md-keyset %1)
+                                                                                (sorted-set %2))
+                                                            cell))))
+                                 md-keyset))]
+                  keyset)))
+            files)
+        ; merge keysets..
+        merged-keyset (reduce clojure.set/union sets)
+        _ (map #(assert (= clojure.lang.PersistentTreeSet (class %1))) merged-keyset)
+        counts (map count merged-keyset)
         N (calculate-N (apply max counts))]
-    (doseq [[dim keys] (map-indexed vector keyset)]
-      (doseq [[idx name] (map-indexed vector keys)]
-        ;(store-raw keytab name [(str dim "-dimkey") idx])
-        ;(store-raw keytab idx [(str dim "-namekey") name])
-
-        ;new
-        (store-raw keytab (str dim "-dimkey-" idx) k)
-        ;(println k "=>" idx)
-        (store-raw keytab (str dim "-namekey-" k) idx)
-        ))
-    (println counts N)))
+    (println "stored" (map count (pmap (fn [[dim keys]]
+                                   (pmap (fn [[idx name]]
+                                           (store-raw keytab (str dim "-dimkey-" idx) name)
+                                           (store-raw keytab (str dim "-namekey-" name) idx))
+                                         (map-indexed vector keys)))
+                                 (map-indexed vector merged-keyset)))
+           "keypairs")
+    (println "unique keys per dimension:" counts)
+    ; return origin and N
+    [(vec (take (count counts) (repeat 0))) N]))
 
 (defn insert-row-by-row [cube keytab origin datafile N]
   (with-open [rdr (reader datafile)]
-    (doseq [line (line-seq rdr)]
-      (let [cell (seq (.split line ","))
-            value 1] ; should come from somewhere...
-        (add-row-to-cube cube keytab origin [cell 1] N :sum)))))
+    (let [firstline (.split (first (line-seq rdr)) ",")
+          last-datum? (try (Integer/parseInt (last firstline)) true
+                        (catch Exception e false))]
+      (dorun (pmap (fn [line]
+                     (let [line-data (.split line ",")
+                           [value cell] (if last-datum?
+                                          [(last line-data) (drop-last line-data)]
+                                          [1 (seq line-data)])]
+                       (println "Adding" [cell value] "to cube...")
+                       (add-row-to-cube cube keytab origin [cell value] N :sum)))
+                   (line-seq rdr)))))
+  (println "Done inserting for" datafile))
 
 
 ; better border-sum...
+; stripped it apart since it wasn't working right
 (comment
 (defn sum-borders []
   ; we go leve-by-level.

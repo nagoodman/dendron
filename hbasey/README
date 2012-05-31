@@ -12,7 +12,21 @@ the exception you have to install it to the local maven repo like so:
 
 To launch a repl manually, just run `lein repl`.
 
-You can create an uber-jar that packages up the code and all the dependencies into one standalone jar file. `lein uberjar`. If you have one already just run it like a normal jar file.
+You can create an uber-jar that packages up the code and all the dependencies into one standalone
+jar file.
+
+`lein uberjar clojure.main`
+
+If you have the jar already just run it like a normal jar file but with rlwrap.
+
+rlwrap java -jar dendron-1.0.0-SNAPSHOT-standalone.jar
+
+It will launch a repl. Once it has launched, run:
+
+(use 'bi.gr8.cuber.core)
+(ns bi.gr8.cuber.core)
+
+this is equivalent to the `lein repl` environment.
 
 ## Purpose and Usage
 
@@ -21,15 +35,20 @@ This project encompasses two core functions related to Big Data Cubing.
 1. Construction of the cube for later querying.
 2. Querying the cube.
 
-As a sub-function, the full environment is provided for debug and information gathering via the repl.
+As a sub-function, the full environment is provided for debug and information gathering via the repl. Direct and indirect access to both HBase and DynamoDB is possible.
 
 ## Constructing the Cube
 
 Presently we read in from CSV files and output to DynamoDB. Each row
-must have the same number of fields. The final value
-of the CSV row will be taken as the value to use in the cube construction,
-if it is numeric. If it is not numeric, the default is to use the value 1
-and the data will be interpreted as counts.
+must have the same number of fields, the dimensionality of the data represented
+by how many fields there are (with the possibility of subtracting one field if the
+final field is the value).
+
+The final value of the CSV row will
+be taken as the value to use in the cube construction if it is numeric.
+If it is not numeric, the default is to use the value 1
+and the data will be interpreted as counts and all fields contribute
+to the dimensionality count.
 
 Before beginning make sure you place any necessary AWS credentials in "credentials.clj", there is a template included in this directory.
 
@@ -37,7 +56,15 @@ From the repl:
 
 (construct-cube "cubename" "csvlocation")
 
-If desired you can specify even more csv files:
+This will create the DynamoDB table "cubename" and "cubename-keymd" with throughput provisions
+{:read 50 :write 40} and {:read 50 :write 5} respectively. Each creation takes 15 seconds, 30
+second total. If the tables already exist, the function will continue on
+and will not delete them. To delete both tables:
+
+(clean-table (dyndb-table "cubename"))
+(clean-table (dyndb-key-table "cubename"))
+
+If desired you can specify even more csv files during creation that will be unioned:
 
 (construct-cube "cubename" "csvlocation" "csvlocation2" ...)
 
