@@ -18,18 +18,17 @@
 
 ; querying-related
 
-(defn matching-borders [cell anchor]
-  (map (fn [[i v]] (assoc anchor i v)) (map-indexed vector cell)))
+;(matching-borders [:x :y :z :w] [:a :b :c :d] 3)
+
+(defn matching-borders
+  ([cell anchor]
+    (map (fn [[i v]] (assoc anchor i v)) (map-indexed vector cell)))
+  ([cell anchor dim]
+    (if (zero? dim) (matching-borders cell anchor)
+      (let [idxs (range (count anchor))
+            idx-groups (combin/combinations idxs (inc dim))]
+        (map (fn [group] (apply assoc anchor (flatten (map #(vector %1 (get cell %1)) group)))) idx-groups)))))
 (def matching-borders (memoize matching-borders))
-
-(matching-borders [2 2 1] [0 0 0] 1)
-
-(defn matching-borders [cell anchor dim]
-  (if (zero? dim) (matching-borders cell anchor)
-    (let [idxs (range (count anchor))
-          idx-groups (combin/combinations idxs (inc dim))]
-      (map (fn [group] (map #(vector %1 (get cell %1)) group)) idx-groups)
-      )))
 
 (defn relative-anchors
   "Return array of relative anchors, the 0th entry is the root-most
