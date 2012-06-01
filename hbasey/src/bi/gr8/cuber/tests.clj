@@ -3,6 +3,9 @@
   ;HBASE
   ; tests during dev
 
+  (require '[clojure.math.combinatorics :as combin])
+  (require '[clojure-hbase.core :as hb])
+  (import '[org.apache.hadoop.hbase.util Bytes])
   (def blargo [[0 [0] 1 [0, 1] 2 [0, 1, 2] 3 [0, 3] 4 [0, 3, 4] 5 [5] 6 [5, 6] 7 [5, 6, 7] 8 [5, 8] 9 [5, 8, 9] ]
                [ 0 [0] 1 [0, 1] 2 [0, 1, 2] 3 [0, 3] 4 [0, 3, 4] 5 [5] 6 [5, 6] 7 [5, 6, 7] 8 [5, 8] 9 [5, 8, 9] ]])
   (def orig ^{:dimensions [:d2 :d2] :measure :val :N 10}
@@ -22,17 +25,27 @@
   (def tab (hb/table "hbase-debug-data-table"))
   (def keytab (hb/table "hbase-debug-keymap-table"))
 
-    (let [keytab keytab]
-      (doseq [[dim md] (map-indexed vector blargo3)]
-        (doseq [[idx [k v]] (map-indexed vector (partition 2 md))]
-          ; for building
-          (hb/put keytab (str k) :value [d-k-hb-fam (str dim "-dimkey") idx])
-          (hb/put keytab idx :value [d-k-hb-fam (str dim "-namekey") (str k)])
-          )))
+  (let [keytab keytab]
+    (doseq [[dim md] (map-indexed vector blargo3)]
+      (doseq [[idx [k v]] (map-indexed vector (partition 2 md))]
+        ; for building
+        (hb/put keytab (str k) :value [d-k-hb-fam (str dim "-dimkey") (str idx)])
+        (hb/put keytab (str idx) :value [d-k-hb-fam (str dim "-namekey") (str k)])
+        )))
 
-  (for [x (range 10) y (range 10)]
-    (do (println "adding" [x y] (get orig [x y]))
-    (cube/add-row-to-cube tab keytab [0 0] [[x y] 1] 10 :sum)))
+  (defn mapp [result]
+    (hb/latest-as-map result :map-family #(keyword (Bytes/toString %))
+      :map-qualifier #(keyword (Bytes/toString %))
+      :map-value #(Bytes/toString %)))
+
+  (hb/with-scanner [res (hb/scan keytab)]
+    (pprint (doall (map mapp (-> res .iterator iterator-seq)))))
+
+  (binding [*noisy?* true]
+    (for [x (range 10) y (range 10)]
+      (do (println "adding" [x y] (get orig [x y]))
+        (cube/add-row-to-cube tab keytab [0 0] [[x y] (get orig [x y])] 10 :sum)))
+    )
 
 ;(get orig [x y])] 10 :sum)))
 
@@ -50,6 +63,7 @@
 
   (def b (for [x (range 10) y (range 10) z (range 10)]
            [[x y z] (read-val tab [x y z] :sum)]))
+
 (pprint b)
 
 
@@ -67,6 +81,30 @@
   (binding [*noisy?* true]
     (cube/query tab keytab [9 9 9] 10 :sum))
 
+  ; should be 27
+; should read 15 vals:
+; l0: [0,0,0], [0,2,0], [0,0,2], [0,2,2]; [2,0,0], [2,2,0], [2,0,2]
+; l1: [1,1,1], [1,2,1], [1,1,2], [1,2,2]; [2,1,1], [2,2,1], [2,1,2]
+; l2: [2,2,2]
+; debug:
+;        1        2        2        ?        2        ?        ?   =7
+;     [0 0 0], [0 2 0], [0 0 2],        ; [2 0 0],        ,        .
+;        1        1        1        ?        1        ?        ?   =4
+;     [1 1 1], [1 2 1], [1 1 2],        ; [2 1 1],        ,        .
+;        1   =1
+;     [2 2 2]
+;     =12
+  (binding [*noisy?* true] (cube/query tab keytab [2 2 2] 10 :sum))
+
+; [2 2 1] should be 18
+; l0: [0 0 0], [0 2 0], [0 0 1], [0 2 1]; [2 0 0], [2 2 0], [2 0 1]
+; l1: [1 1 1], [1 2 1], [2 1 1], [2 2 1]. done!
+; debug:
+; [2 0 0] [0 2 0] [0 0 1].... [2 2  0], [0  2 1], [2  0  1]
+(binding [*noisy?* true] (cube/query tab keytab [2 2 1] 10 :sum))
+
+;(binding [*noisy?* true *really-store?* false] (cube/add-row-to-cube tab keytab [0 0 0] [[2 2 1] 1] 10 :sum))
+
   (cube/query tab keytab [7 8 3] 10 :sum)
 
   (reduce + (for [x (range 8) y (range 9) z (range 4)] 1))
@@ -75,7 +113,7 @@
 
   (reduce + (for [x (range 6) y (range 6) z (range 1)] 1))
 
-  (read-val tab [5 5 0] :sum)
+  (read-val tab [2 1 2] :sum)
 
   (query-cube tab [9 9] keytab 10 :sum)
 

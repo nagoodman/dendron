@@ -56,9 +56,21 @@ From the repl:
 
 (construct-cube "cubename" "csvlocation")
 
-This will create the DynamoDB table "cubename" and "cubename-keymd" with throughput provisions
-{:read 50 :write 40} and {:read 50 :write 5} respectively. Each creation takes 15 seconds, 30
-second total. If the tables already exist, the function will continue on
+This will create the DynamoDB table "cubename" and "cubename-keymd" with
+throughput provisions {:read 50 :write 40} and {:read 50 :write 5} respectively.
+
+On a small single-core instance, loading a 22k file takes about 2.5 minutes
+with write throughput at 500 but about 32 minutes with write throughput at 70.
+Since we're charged by the hour, the throughput we want really only depends
+on whether we use more than one table per set of data or not, and whether
+we want to load it really fast. During development time it makes sense
+to modify it to 500 since 50 cents per hour is still cheap compared to waiting.
+500 is about the magic number where cpu/disk-IO overhead dominates. On a
+large instance, the time was not significantly different, thus it's really
+disk-IO.
+
+45 seconds will be spent sleeping for the creation to complete.
+If the tables already exist, the function will continue on
 and will not delete them. To delete both tables:
 
 (clean-table (dyndb-table "cubename"))

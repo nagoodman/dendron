@@ -66,9 +66,11 @@
 (defn dyndb-key-table [name]
   (dyndb-table (str name "-keymd")))
 
+(defn store-N [keytab N]
+  (dyndb/put-item (:cred keytab) (:name keytab) {(:name d-k-dyn-fam) "cube-N"
+                                                 "value" (str N)}))
 (defn get-N [keytab]
-  10
-  )
+  (Integer/parseInt (get (dyndb/get-item (:cred keytab) (:name keytab) "cube-N") "value")))
 
 (defn get-origin-N [keytab]
   [[0 0] 10])
@@ -128,6 +130,10 @@
                    (.setAttributeUpdates items)))]
     (Integer/parseInt (.getN (get (.getAttributes up-result) "value")))))
 
+; NOTE: using this is ~15% slower in a test.
+(defn store-val-async [agent cube anchor data kind]
+  (store-val cube anchor data kind))
+
 (defmulti store-raw (fn [tab key value] (class tab)))
 
 (defmethod store-raw HTablePool$PooledHTable [tab key [col value]]
@@ -146,7 +152,7 @@
 
 (defmethod-mem read-name2key HTablePool$PooledHTable [tab dim nm]
   (try
-    (hbase-read-long-vals tab nm [d-k-hb-fam (str dim "-namekey")])
+    (hbase-read-str-vals tab (str nm) [d-k-hb-fam (str dim "-namekey")])
   (catch NullPointerException e ; doesn't exist
     nil)))
 
