@@ -73,12 +73,16 @@
 
 ; creation related
 
-(defn anchor-slots [origin N] ; size 2^dim of origin
+(defn anchor-slots
+  "Returns the 2^dim anchors with shared origin"
+  [origin N]
   (apply combin/cartesian-product (map #(range %1 (+ %1 N) (/ N 2)) origin)))
 (def anchor-slots (memoize anchor-slots))
 
-(defn get-dependent-anchors [origin cell N]
-  ; includes cell itself if it's an anchor
+(defn get-dependent-anchors
+  "Returns any anchors whose value is derived in part from cell,
+  including cell itself if cell is an anchor."
+  [origin cell N]
   (if (= N 1) (list cell)
     (let [anchors (anchor-slots origin N)]
       (filter (fn [anchor] (every? (fn [[ai ci]] (>= ai ci)) (partition 2 (interleave anchor cell)))) anchors))))
@@ -221,7 +225,7 @@
     nil))
 
 ;called at the end of the initial cube-creation process
-(defn sum-cube-borders [cube keytab origin N]
+(defn sum-cube-borders-old [cube keytab origin N]
   (let [dim (count origin)
         bord-regs (get-all-border-regions origin N)]
     (dorun (map (fn [box]
@@ -296,8 +300,49 @@
 
 
 ; better border-sum...
-; stripped it apart since it wasn't working right
+
+(defn get-border-cells
+  "For a particular anchor cell, get its corresponding border cells in
+  a sorted lazy seq."
+  [anchor N]
+  (let [dims (count anchor)
+        ;(map (fn [] (vector held) (range (/ N 2)))
+        ]
+
+  ))
+
+;(calc-value nil [0 2 2] [0 0 0] 10)
+
+;(calc-value nil [3 3 0] [0 0 0] 10)
+
+;(calc-value nil [0 4] [0 0] 10)
+
+(defn calc-bord-sum-value
+  "Pre-condition 1: all dimensions obey the constraint that at least
+  one matches the corresponding anchor dimension and the rest
+  satisfy a_i + 1 <= c_i < a_i + k with k being (dec (/ N 2)).
+  Pre-condition 2: a given cell must have their immediately lesser
+  neighbor(s) already computed.
+  "
+  [cube cell anchor]
+  (let [left-bound (map-indexed #(if (= (get cell %1) %2) 0 (inc %2)) anchor)
+        differing-dims (keep-indexed #(if (not= (get cell %1) %2) %1) left-bound)
+        to-add (map #(assoc cell %1 (dec (get cell %1))) differing-dims)
+        to-sub (reduce #(assoc %1 %2 (dec (get cell %2))) cell differing-dims)]
+    (cond
+      (= to-sub cell) 
+        0 ; neighbor to anchor
+      (= to-sub (first to-add))
+        (read-val cube to-sub :sum) ; left-bound "1 away"
+      ; else "more than 1 away"
+      :else (apply +
+                   (mapper #(read-val cube %1 :sum) to-add)
+                   (* -1 (read-val cube to-sub :sum))))))
+
+
 (comment
+  (binding [*really-store?* false] (sum-borders [tab keytab [0 0 0] 10]))
+
 (defn sum-borders [cube keytab origin N]
   ; we go level-by-level.
   (let [dims (count origin)
@@ -305,20 +350,22 @@
         k (dec (/ N 2))]
     (if (> levels 0)
       ; for every level, we have 2^d "boxes" where each dim is length k
-      ; so, pmap 4 times.
-      (dorun (pmap
-               (fn [box-numb]
-                 (let [box-origin [0 9 3]]
-                 ; for each box, sum borders in each of d dimensions.
-                 ; pmap the dims.
-                 (dorun (pmap
-                          (fn [dim] 
-                            ; summing is simple...
-                            )  (range dims)))
-                 ; then, recursively apply this algorithm.
-                 (sum-borders cube keytab box-origin k)
-                 )
-               (range 5)))
+      ; and the anchor is the box-origin for sub-boxes
+      (dorun (mapper
+               (fn [box-origin]
+                 (let [bord-cells (get-border-cells box-origin N)]
+                   (dorun (map (fn [cell]
+                                    (if (cell-in-keys? keytab cell)
+                                      (store-val cube cell
+                                                 (calc-bord-sum-value cube cell box-origin)
+                                                 :sum)))
+                                  bord-cells))
+
+
+                   ; then, recursively apply this algorithm.
+                   (sum-borders cube keytab box-origin k)
+                   ))
+               (anchor-slots origin N))
 
     ))
 ))

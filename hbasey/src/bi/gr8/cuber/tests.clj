@@ -2,6 +2,10 @@
 
   ;HBASE
   ; tests during dev
+  ; with blargo and orig we have our 2D "if this doesn't work all is lost"
+  ; sanity check.
+  ; with blargo3 and a 10x10x10 cube of counts we also do some check queries
+  ; to make sure the border summing works.
 
   (require '[clojure.math.combinatorics :as combin])
   (require '[clojure-hbase.core :as hb])
@@ -83,27 +87,22 @@
 
   ; should be 27
 ; should read 15 vals:
+;        1        2        2        4        2        4        4
 ; l0: [0,0,0], [0,2,0], [0,0,2], [0,2,2]; [2,0,0], [2,2,0], [2,0,2]
+;        1        1        1        1        1        1        1
 ; l1: [1,1,1], [1,2,1], [1,1,2], [1,2,2]; [2,1,1], [2,2,1], [2,1,2]
+;        1
 ; l2: [2,2,2]
-; debug:
-;        1        2        2        1*       2        1*       1*  =7 (10*)
-;     [0 0 0], [0 2 0], [0 0 2], [0 2 2]; [2 0 0], [2 2 0], [2 0 2].
-;        1        1        1        1*       1        1*       1*  =4 (7*)
-;     [1 1 1], [1 2 1], [1 1 2], [1 2 2]; [2 1 1], [2 2 1], [2 1 2].
-;        1   =1
-;     [2 2 2]
-;     =12 (18*)
   (binding [*noisy?* true] (cube/query tab keytab [2 2 2] 10 :sum))
 
 ; [2 2 1] should be 18
+;        1        2        1        2        2        4        2
 ; l0: [0 0 0], [0 2 0], [0 0 1], [0 2 1]; [2 0 0], [2 2 0], [2 0 1]
+;        1        1        1        1
 ; l1: [1 1 1], [1 2 1], [2 1 1], [2 2 1]. done!
-; debug:
-; [2 0 0] [0 2 0] [0 0 1].... [2 2  0], [0  2 1], [2  0  1]
 (binding [*noisy?* true] (cube/query tab keytab [2 2 1] 10 :sum))
 
-;(binding [*noisy?* true *really-store?* false] (cube/add-row-to-cube tab keytab [0 0 0] [[2 2 1] 1] 10 :sum))
+(binding [*noisy?* true *really-store?* false] (cube/add-row-to-cube tab keytab [0 0 0] [[1 2 2] 1] 10 :sum))
 
   (cube/query tab keytab [7 8 3] 10 :sum)
 
