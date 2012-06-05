@@ -37,14 +37,15 @@
       (println "Tables created.")
       (catch Exception e (println "Tables already exist.")))
     (println "Creating keys...")
-    (let [[origin N] [[0 0 0] 190]
-          ;(cube/create-key-int-map csvs tbl-keys)
+    (let [[origin N] ;[[0 0 0] 190]
+          (cube/create-key-int-map csvs tbl-keys)
           ]
       (store-N tbl-keys N)
       (println "Prepped for cube with origin" origin "and size" N)
       (println "Inserting data...")
       (dorun (pmap (fn [csv] (cube/insert-row-by-row tbl tbl-keys origin csv N)) csvs))
       (println "Summing borders...")
+      (cube/sum-borders tbl tbl-keys origin N)
       ;(println (dorun (apply list (cube/sum-cube-borders tbl tbl-keys origin N))))
       (println "Finished."))))
 

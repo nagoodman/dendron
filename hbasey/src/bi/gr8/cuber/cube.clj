@@ -12,9 +12,13 @@
         [clojure.repl]
         [clojure.java.io]))
 
-(defn log2 [x]
-  (long (Math/floor (/ (Math/log x) (Math/log 2)))))
+;(binding [*noisy?* true] (compile 'bi.gr8.cuber.cube))
+(defmacro mapper-chooser []
+  (if *noisy?*
+    (do (println "map") `map)
+    (do (println "pmap") `pmap)))
 
+(def mapper (mapper-chooser))
 
 ; querying-related
 
@@ -53,13 +57,10 @@
     res))
 (def names2nums (memoize names2nums))
 
-(def mapper map) ; change to map during debug for sanity
-
 (defn query [cube keytab cell N kind] ; set kind=:sum
   (let [dimwise-level-anchors (map #(relative-anchors N %1) cell)
         dims (count dimwise-level-anchors)
         anchors (partition dims (apply interleave dimwise-level-anchors))]
-    (println "cell:" cell "anchors-to-cell:" anchors)
     (reduce +
             (mapper
               (fn [anch]
@@ -144,7 +145,7 @@
       (if (not= -1 (.indexOf anchors cell))
         :anchor
         ; check quadrants in parallel, if nil, it's a border cell
-        (if-let [center-q (some identity (pmap in-hypercube?
+        (if-let [center-q (some identity (mapper in-hypercube?
                                                (gen-centers anchors length)))]
           center-q
           :border)))))
@@ -163,7 +164,7 @@
       (= location :anchor)
         (let [anchors-to-update (get-dependent-anchors origin cell N)]
           (if *noisy?* (println cell :anchor))
-          (dorun (pmap (fn [anchor]
+          (dorun (mapper (fn [anchor]
                          (if (cell-in-keys? keytab anchor)
                            (store-val cube anchor data kind)))
                        anchors-to-update)))
@@ -174,7 +175,7 @@
                           (conj anchors-to-update border-to-update cell)
                           (conj anchors-to-update border-to-update))]
           (if *noisy?* (println cell :border))
-          (dorun (pmap (fn [to-update]
+          (dorun (mapper (fn [to-update]
                          (if (cell-in-keys? keytab to-update)
                            (store-val cube to-update data kind)))
                        to-updates)))
@@ -188,7 +189,7 @@
                                                 (if (= ret %1) nil ret))
                                              intersecting-borders))]
           (if *noisy?* (println cell :recur location))
-          (dorun (pmap (fn [to-update]
+          (dorun (mapper (fn [to-update]
                          (if (cell-in-keys? keytab to-update)
                            (store-val cube to-update data kind)))
                        (concat anchors-to-update borders-to-update)))
@@ -198,49 +199,7 @@
 
 ; for the final step of summing border regions
 
-(defn get-all-border-regions [origin N]
-  ; return a seq of all pairs of border regions in a cube
-  ; (with the start offset by 1 so that we can start by reading,
-  ; increment, increment, ...)
-  (if (> N 4)
-    (let [anchors (map vec (anchor-slots origin N))
-          dims (count origin)
-          ; each anchor specifies the start of dims ranges
-          ranges (map (fn [anchor]
-                        (loop [dim 0 pairs []]
-                          (if (< dim dims)
-                            (recur (inc dim)
-                                   (conj pairs
-                                         [(assoc anchor dim (inc (nth anchor dim)))
-                                          (assoc anchor dim (+ (nth anchor dim) (dec (/ N 2))))]
-                                         ))
-                            pairs)))
-                      anchors)
-          sub-N (dec (/ N 2))
-          sub-ranges (map (fn [anchor]
-                            (let [sub-origin (map inc anchor)]
-                              (get-all-border-regions sub-origin sub-N)))
-                          anchors)]
-      (if (every? identity sub-ranges) (conj sub-ranges ranges) ranges))
-    nil))
-
 ;called at the end of the initial cube-creation process
-(defn sum-cube-borders-old [cube keytab origin N]
-  (let [dim (count origin)
-        bord-regs (get-all-border-regions origin N)]
-    (dorun (map (fn [box]
-           (dorun (map-indexed (fn [idx [start end]]
-                          (if (cell-in-keys? keytab start)
-                            (loop [cell start, value (read-val cube start :sum)]
-                              (if (and (< (nth cell idx)
-                                          (nth end idx))
-                                       (or value (not= cell start)))
-                                (let [next-cell (assoc cell idx (inc (nth cell idx)))]
-                                  (if (cell-in-keys? keytab next-cell)
-                                    (recur next-cell
-                                           (store-val cube next-cell value :sum))))))))
-                        box)))
-         bord-regs))))
 
 (defn calculate-N [limit]
   (loop [N 4]
@@ -303,19 +262,15 @@
 
 (defn get-border-cells
   "For a particular anchor cell, get its corresponding border cells in
-  a sorted lazy seq."
+  a sorted lazy seq. It works by holding the first dimension, then for
+  the other dimensions iterating to the N val in that dimension."
   [anchor N]
-  (let [dims (count anchor)
-        ;(map (fn [] (vector held) (range (/ N 2)))
-        ]
-
-  ))
-
-;(calc-value nil [0 2 2] [0 0 0] 10)
-
-;(calc-value nil [3 3 0] [0 0 0] 10)
-
-;(calc-value nil [0 4] [0 0] 10)
+  (let [half (/ N 2)
+        anch (set anchor)
+        values (map #(range %1 (+ %1 half)) anchor)]
+    (filter #(> (count (clojure.set/intersection anch (set %1))) 0)
+            (apply combin/cartesian-product values))))
+(def get-border-cells (memoize get-border-cells))
 
 (defn calc-bord-sum-value
   "Pre-condition 1: all dimensions obey the constraint that at least
@@ -325,10 +280,12 @@
   neighbor(s) already computed.
   "
   [cube cell anchor]
-  (let [left-bound (map-indexed #(if (= (get cell %1) %2) 0 (inc %2)) anchor)
+  (let [cell (vec cell) anchor (vec anchor)
+        left-bound (map-indexed #(if (= (get cell %1) %2) %2 (inc %2)) anchor)
         differing-dims (keep-indexed #(if (not= (get cell %1) %2) %1) left-bound)
         to-add (map #(assoc cell %1 (dec (get cell %1))) differing-dims)
         to-sub (reduce #(assoc %1 %2 (dec (get cell %2))) cell differing-dims)]
+    (if *noisy?* (do (println "add:" to-add "sub:" to-sub)))
     (cond
       (= to-sub cell) 
         0 ; neighbor to anchor
@@ -336,12 +293,11 @@
         (read-val cube to-sub :sum) ; left-bound "1 away"
       ; else "more than 1 away"
       :else (apply +
-                   (mapper #(read-val cube %1 :sum) to-add)
-                   (* -1 (read-val cube to-sub :sum))))))
+                   (conj (mapper #(read-val cube %1 :sum) to-add)
+                         (* -1 (read-val cube to-sub :sum)))))))
 
-
-(comment
-  (binding [*really-store?* false] (sum-borders [tab keytab [0 0 0] 10]))
+(defn log2 [x]
+  (long (Math/floor (/ (Math/log x) (Math/log 2)))))
 
 (defn sum-borders [cube keytab origin N]
   ; we go level-by-level.
@@ -353,37 +309,15 @@
       ; and the anchor is the box-origin for sub-boxes
       (dorun (mapper
                (fn [box-origin]
-                 (let [bord-cells (get-border-cells box-origin N)]
+                 (let [bord-cells (drop 1 (get-border-cells box-origin N))]
+                   (if *noisy?* (println "bord-cells:" bord-cells))
                    (dorun (map (fn [cell]
-                                    (if (cell-in-keys? keytab cell)
-                                      (store-val cube cell
-                                                 (calc-bord-sum-value cube cell box-origin)
-                                                 :sum)))
-                                  bord-cells))
-
-
+                                 (if (cell-in-keys? keytab cell)
+                                   (store-val cube cell
+                                              (calc-bord-sum-value cube cell box-origin)
+                                              :sum)))
+                               bord-cells))
                    ; then, recursively apply this algorithm.
                    (sum-borders cube keytab box-origin k)
                    ))
-               (anchor-slots origin N))
-
-    ))
-))
-
-(defn sum-cube-borders [cube keytab origin N]
-  (let [dim (count origin)
-        bord-regs (get-all-border-regions origin N)]
-    (dorun (map (fn [box]
-           (dorun (map-indexed (fn [idx [start end]]
-                          (if (cell-in-keys? keytab start)
-                            (loop [cell start, value (read-val cube start :sum)]
-                              (if (and (< (nth cell idx)
-                                          (nth end idx))
-                                       (or value (not= cell start)))
-                                (let [next-cell (assoc cell idx (inc (nth cell idx)))]
-                                  (if (cell-in-keys? keytab next-cell)
-                                    (recur next-cell
-                                           (store-val cube next-cell value :sum))))))))
-                        box)))
-         bord-regs))))
-  )
+               (anchor-slots origin N))))))

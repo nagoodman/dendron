@@ -25,6 +25,9 @@
 (def d-dyn-fam {:name "d-loc" :type "S"})
 (def d-k-dyn-fam {:name "d-k-id" :type "S"})
 
+(def ^:dynamic *noisy?* false)
+(def ^:dynamic *really-store?* true)
+
 (declare read-val hbase-read-str-vals hbase-read-long-vals)
 
 ; Create methods
@@ -92,26 +95,23 @@
 
   ; 100 MB storage free, $1/GB-month after.
 
-
   (dyndb/describe-table (:cred tbl) (:name tbl))
-  ;(store-val tbl [0 0] 3 :sum)
-
   )
 
 ; Store methods
-
-(def ^:dynamic *really-store?* true)
 
 (defmulti store-val (fn [tab cell val kind] [(class tab) kind]))
 
 (defmethod store-val [HTablePool$PooledHTable :sum] [tab cell val kind]
   (let [cell (vec cell)]
     (if *really-store?*
-      (.incrementColumnValue tab
+      (let [res (.incrementColumnValue tab
                              (hb/to-bytes cell)
                              (hb/to-bytes d-hb-fam)
                              (hb/to-bytes :sum)
-                             val)
+                             val)]
+        (if *noisy?* (println "inc'd" cell "by" res))
+        res)
       (let [orig (read-val tab cell :sum)]
         (print "would have inc'd" cell "by" val "to go from" orig "to ")
         (println (+ orig val) "; ")
@@ -143,8 +143,6 @@
   (dyndb/put-item (:cred tab) (:name tab) {(:name d-k-dyn-fam) (str key) "value" (str value)}))
 
 ; Read methods
-
-(def ^:dynamic *noisy?* false)
 
 (defmulti read-name2key
   "Given the integer of a dimension key, return its named equivalent."

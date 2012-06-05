@@ -51,39 +51,29 @@
         (cube/add-row-to-cube tab keytab [0 0] [[x y] (get orig [x y])] 10 :sum)))
     )
 
-;(get orig [x y])] 10 :sum)))
-
   (binding [*noisy?* true]
-    (for [x (range 10) y (range 10) z (range 10)]
+    (dorun (for [x (range 10) y (range 10) z (range 10)]
       (do (println "adding" [x y z]);(get orig [x y]))
         (cube/add-row-to-cube tab keytab [0 0 0] [[x y z] 1] 10 :sum))))
+    )
 
-  (time (println (apply list (cube/sum-cube-borders tab keytab [0 0] 10))))
+   (binding [*noisy?* true]
+    (dorun (for [x (range 4) y (range 4) z (range 4)]
+      (do (println "adding" [x y z]);(get orig [x y]))
+        (cube/add-row-to-cube tab keytab [0 0 0] [[x y z] 1] 4 :sum)))))
 
-  (println (apply list (cube/sum-cube-borders tab keytab [0 0 0] 10)))
+(binding [*noisy?* true *really-store?* true] (cube/sum-borders tab keytab [0 0 0] 4))
 
-  (pprint (partition 5 (for [x (range 10) y (range 10) z (range 10)]
-           [[x y z] (read-val tab [x y z] :sum)])))
+(binding [*noisy?* true *really-store?* true] (cube/sum-borders tab keytab [0 0 0] 10))
 
-  (def b (for [x (range 10) y (range 10) z (range 10)]
-           [[x y z] (read-val tab [x y z] :sum)]))
-
-(pprint b)
-
+(binding [*noisy?* true *really-store?* true] (cube/sum-borders tab keytab [0 0] 10))
 
   (def a (for [day (range 10) st (range 10)]
            [[day st] (read-val tab [day st] :sum)]))
 
   (cube2csv a)
 
-(binding [*really-store?* false
-          *noisy?* true]
-  (cube/add-row-to-cube tab keytab [0 0 0] [[0 5 0] 1] 10 :sum))
-
-  (cube/query tab keytab [9 9] 10 :sum)
-
-  (binding [*noisy?* true]
-    (cube/query tab keytab [9 9 9] 10 :sum))
+(assert (= a '([[0 0] 3] [[0 1] 5] [[0 2] 6] [[0 3] 8] [[0 4] 10] [[0 5] 17] [[0 6] 6] [[0 7] 9] [[0 8] 12] [[0 9] 13] [[1 0] 7] [[1 1] 3] [[1 2] 2] [[1 3] 11] [[1 4] 8] [[1 5] 33] [[1 6] 1] [[1 7] 2] [[1 8] 7] [[1 9] 2] [[2 0] 9] [[2 1] 4] [[2 2] 2] [[2 3] 9] [[2 4] 3] [[2 5] 50] [[2 6] 4] [[2 7] 5] [[2 8] 16] [[2 9] 4] [[3 0] 12] [[3 1] 9] [[3 2] 5] [[3 3] 28] [[3 4] 14] [[3 5] 69] [[3 6] 7] [[3 7] 15] [[3 8] 35] [[3 9] 7] [[4 0] 16] [[4 1] 2] [[4 2] 1] [[4 3] 6] [[4 4] 3] [[4 5] 86] [[4 6] 7] [[4 7] 1] [[4 8] 11] [[4 9] 2] [[5 0] 21] [[5 1] 19] [[5 2] 29] [[5 3] 54] [[5 4] 74] [[5 5] 126] [[5 6] 25] [[5 7] 45] [[5 8] 65] [[5 9] 77] [[6 0] 4] [[6 1] 5] [[6 2] 2] [[6 3] 14] [[6 4] 1] [[6 5] 28] [[6 6] 3] [[6 7] 3] [[6 8] 10] [[6 9] 1] [[7 0] 6] [[7 1] 4] [[7 2] 2] [[7 3] 8] [[7 4] 3] [[7 5] 42] [[7 6] 9] [[7 7] 1] [[7 8] 13] [[7 9] 3] [[8 0] 11] [[8 1] 13] [[8 2] 7] [[8 3] 30] [[8 4] 7] [[8 5] 60] [[8 6] 13] [[8 7] 13] [[8 8] 39] [[8 9] 9] [[9 0] 17] [[9 1] 1] [[9 2] 2] [[9 3] 7] [[9 4] 2] [[9 5] 76] [[9 6] 3] [[9 7] 1] [[9 8] 9] [[9 9] 2])))
 
   ; should be 27
 ; should read 15 vals:
@@ -102,7 +92,40 @@
 ; l1: [1 1 1], [1 2 1], [2 1 1], [2 2 1]. done!
 (binding [*noisy?* true] (cube/query tab keytab [2 2 1] 10 :sum))
 
+(binding [*noisy?* true] (cube/query tab keytab [2 2 3] 10 :sum))
+
+(1 2 3) as  1
+(2 2 3) as  2
+(1 1 3) as  3
+(2 1 3) as  1
+5
+
+(binding [*noisy?* true] (cube/query tab keytab [9 9 9] 10 :sum))
+
+(binding [*noisy?* true *really-store?* false] (cube/add-row-to-cube tab keytab [0 0 0] [[2 1 1] 1] 10 :sum))
+
 (binding [*noisy?* true *really-store?* false] (cube/add-row-to-cube tab keytab [0 0 0] [[1 2 2] 1] 10 :sum))
+
+
+(binding [*noisy?* true] (cube/query tab keytab [3 3 3] 4 :sum))
+need +9
+
+reading [2 3 2] (2 3 2) as  7
+reading [3 3 2] (3 3 2) as  2
+reading [2 3 3] (2 3 3) as  2
+reading [2 2 3] (2 2 3) as  7
+reading [3 2 2] (3 2 2) as  7
+reading [3 2 3] (3 2 3) as  2
+
+  (binding [*noisy?* true] (cube/query tab keytab [2 2 0] 4 :sum))
+  (reduce + (for [x (range (inc 2)) y (range (inc 2)) z (range (inc 0))] 1))
+
+(doseq [c (combin/selections (range 4) 3)]
+  (println c
+           (cube/query tab keytab c 4 :sum)
+           (reduce + (for [x (range (inc (first c)))
+                           y (range (inc (second c)))
+                           z (range (inc (nth c 2)))] 1))))
 
   (cube/query tab keytab [7 8 3] 10 :sum)
 
