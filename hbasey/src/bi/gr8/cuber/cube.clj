@@ -305,12 +305,14 @@
      counts (doall (map count merged-keyset))
      N (calculate-N (apply max counts))]
     (println "dims, unique keys per dimension, N:" (count counts) counts N)
-    (doall (map (fn [[dim keys]] (pmap (fn [[idx name]]
-                  (store-raw keytab (str dim "-dimkey-" idx) name)
-                  (store-raw keytab (str dim "-namekey-" name) idx))
-                                                     (map-indexed vector keys))
-                   (println "Finished dim" dim))
-                 (map-indexed vector merged-keyset)))
+    (dorun (map (fn [[dim keys]]
+                  (dorun (map
+                           (fn [[idx name]]
+                             (store-raw keytab (str dim "-dimkey-" idx) name)
+                             (store-raw keytab (str dim "-namekey-" name) idx))
+                           (map-indexed vector keys)))
+                  (println "Finished dim" dim))
+                (map-indexed vector merged-keyset)))
     ; return origin and N after storing
     (let [origin (vec (take (count counts) (repeat 0)))]
       (store-origin-N keytab origin N)
