@@ -7,46 +7,42 @@
         [clojure.repl]
         [clojure.java.io]))
 
-(defn in? [hay need]
-  (not= -1 (.indexOf hay need)))
-
 (defn -main [& args]
   (println "Don't run this directly."))
 
 (comment
   "This is for demo purposes."
 
-(use 'bi.gr8.cuber.core)
-(ns bi.gr8.cuber.core)
+(do (use 'bi.gr8.cuber.core) (ns bi.gr8.cuber.core))
 
-  (binding [*noisy?* true] (time (construct-cube "testwith22k" "22kdata.csv")))
+  (binding [*noisy?* true] (time (construct-cube "testwith22k" "22kdata.csv" "22kdata.csv")))
+
+  (defn f [x] (str "/dev/shm/" x))
+  (time (apply construct-cube "testbig" (map f '(On_Time_On_Time_Performance_2001_3.csv On_Time_On_Time_Performance_2001_4.csv))))
 
   (query-cube "testwith22k" ["2010-08-10" "DL" "DCA"])
 
 )
 
-(def data-throughput {:read 100 :write 70})
-(def keydata-throughput {:read 50 :write 5})
+(def data-throughput {:read 100 :write 1000})
+(def construct-keys true)
 
 (defn construct-cube [name & csvs]
   (let [tbl (dyndb-table name)
         tbl-keys (dyndb-key-table name)]
     (try (create-table tbl :dyndb {:hash-key d-dyn-fam :throughput data-throughput})
-      (create-table tbl-keys :dyndb {:hash-key d-k-dyn-fam :throughput keydata-throughput})
       (Thread/sleep 45000)
-      (println "Tables created.")
+      (println "Table created.")
       (catch Exception e (println "Tables already exist.")))
-    (println "Creating keys...")
-    (let [[origin N] ;[[0 0 0] 190]
-          (cube/create-key-int-map csvs tbl-keys)
-          ]
-      (store-N tbl-keys N)
+    (if construct-keys (println "Creating keys..."))
+    (let [[origin N] (if construct-keys
+                       (cube/create-key-int-map csvs tbl-keys)
+                       (get-origin-N tbl-keys))]
       (println "Prepped for cube with origin" origin "and size" N)
       (println "Inserting data...")
-      (dorun (pmap (fn [csv] (cube/insert-row-by-row tbl tbl-keys origin csv N)) csvs))
+      (dorun (map #(cube/insert-row-by-row tbl tbl-keys origin %1 N) csvs))
       (println "Summing borders...")
       (cube/sum-borders tbl tbl-keys origin N)
-      ;(println (dorun (apply list (cube/sum-cube-borders tbl tbl-keys origin N))))
       (println "Finished."))))
 
 (defn query-cube [name namedcell]

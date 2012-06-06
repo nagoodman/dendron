@@ -20,9 +20,11 @@
 
 (def mapper (mapper-chooser))
 
-; querying-related
+(def ^:dynamic *maxdim* 10)
 
-;(matching-borders [:x :y :z :w] [:a :b :c :d] 3)
+;;;;;;;;;;;;;;;;;;
+; querying-related
+;;;;;;;;;;;;;;;;;;
 
 (defn matching-borders
   ([cell anchor]
@@ -61,6 +63,7 @@
   (let [dimwise-level-anchors (map #(relative-anchors N %1) cell)
         dims (count dimwise-level-anchors)
         anchors (partition dims (apply interleave dimwise-level-anchors))]
+    (if *noisy?* (println "anchors involved" anchors))
     (reduce +
             (mapper
               (fn [anch]
@@ -71,8 +74,9 @@
                                                       (repeat anchor))))]
                   (reduce + (mapper #(do (read-val cube %1 kind)) (set (conj bords anchor))))))
               anchors))))
-
+;;;;;;;;;;;;;;;;;;
 ; creation related
+;;;;;;;;;;;;;;;;;;
 
 (defn anchor-slots
   "Returns the 2^dim anchors with shared origin"
@@ -154,10 +158,7 @@
 ; called for each row
 (defn add-row-to-cube ; set kind=:sum
   [cube keytab origin row N kind]
-  (let [;lastval (agent 0) ; dummy agent to support async updates
-        ; it's actually slower in a test. to try again,
-        ; simply change (store-val ..) to (send-off lastval store-val-async ..)
-        [namedcell data] row
+  (let [[namedcell data] row
         cell (names2nums keytab namedcell)
         location (where-is-cell cell origin N)]
     (cond
@@ -195,70 +196,10 @@
                        (concat anchors-to-update borders-to-update)))
           (add-row-to-cube cube keytab (map + anchor (repeat 1)) row (dec (/ N 2)) kind))
       )))
-    ;(await lastval)))
 
-; for the final step of summing border regions
-
-;called at the end of the initial cube-creation process
-
-(defn calculate-N [limit]
-  (loop [N 4]
-    (if (< N limit)
-      (recur (* 2 (inc N)))
-      N)))
-
-; for initial key-load
-(defn create-key-int-map [files keytab]
-  (let [sets (pmap
-            (fn [file]
-              (with-open [rdr (reader file)]
-                (let [firstline (.split (first (line-seq rdr)) ",")
-                      last-datum? (try (Integer/parseInt (last firstline)) true
-                                    (catch Exception e false))
-                      keyset (loop [lines (line-seq rdr) md-keyset []]
-                               (if (seq lines)
-                                 (let [line (.split (first lines) ",")
-                                       cell (if last-datum? (drop-last line) (seq line))]
-                                   (recur (next lines)
-                                          (vec (map-indexed #(clojure.set/union (get md-keyset %1)
-                                                                                (sorted-set %2))
-                                                            cell))))
-                                 md-keyset))]
-                  keyset)))
-            files)
-        ; merge keysets..
-        merged-keyset (reduce clojure.set/union sets)
-        _ (map #(assert (= clojure.lang.PersistentTreeSet (class %1))) merged-keyset)
-        counts (map count merged-keyset)
-        N (calculate-N (apply max counts))]
-    (println "stored" (map count (pmap (fn [[dim keys]]
-                                   (pmap (fn [[idx name]]
-                                           (store-raw keytab (str dim "-dimkey-" idx) name)
-                                           (store-raw keytab (str dim "-namekey-" name) idx))
-                                         (map-indexed vector keys)))
-                                 (map-indexed vector merged-keyset)))
-           "keypairs")
-    (println "unique keys per dimension:" counts)
-    ; return origin and N
-    [(vec (take (count counts) (repeat 0))) N]))
-
-(defn insert-row-by-row [cube keytab origin datafile N]
-  (with-open [rdr (reader datafile)]
-    (let [firstline (.split (first (line-seq rdr)) ",")
-          last-datum? (try (Integer/parseInt (last firstline)) true
-                        (catch Exception e false))]
-      (dorun (pmap (fn [line]
-                     (let [line-data (.split line ",")
-                           [value cell] (if last-datum?
-                                          [(last line-data) (drop-last line-data)]
-                                          [1 (seq line-data)])]
-                       (if *noisy?* (println "Adding" [cell value] "to cube..."))
-                       (add-row-to-cube cube keytab origin [cell value] N :sum)))
-                   (line-seq rdr)))))
-  (println "Done inserting for" datafile))
-
-
-; better border-sum...
+;;;;;;;;;;;;;;;;;;
+; last step, sum up border cells
+;;;;;;;;;;;;;;;;;;
 
 (defn get-border-cells
   "For a particular anchor cell, get its corresponding border cells in
@@ -280,12 +221,13 @@
   neighbor(s) already computed.
   "
   [cube cell anchor]
+  (println cell anchor)
   (let [cell (vec cell) anchor (vec anchor)
         left-bound (map-indexed #(if (= (get cell %1) %2) %2 (inc %2)) anchor)
         differing-dims (keep-indexed #(if (not= (get cell %1) %2) %1) left-bound)
         to-add (map #(assoc cell %1 (dec (get cell %1))) differing-dims)
         to-sub (reduce #(assoc %1 %2 (dec (get cell %2))) cell differing-dims)]
-    (if *noisy?* (do (println "add:" to-add "sub:" to-sub)))
+    (if *noisy?* (do (println "left:" left-bound "diff:" differing-dims "add:" to-add "sub:" to-sub)))
     (cond
       (= to-sub cell) 
         0 ; neighbor to anchor
@@ -309,7 +251,7 @@
       ; and the anchor is the box-origin for sub-boxes
       (dorun (mapper
                (fn [box-origin]
-                 (let [bord-cells (drop 1 (get-border-cells box-origin N))]
+                 (let [bord-cells (get-border-cells box-origin N)]
                    (if *noisy?* (println "bord-cells:" bord-cells))
                    (dorun (map (fn [cell]
                                  (if (cell-in-keys? keytab cell)
@@ -321,3 +263,75 @@
                    (sum-borders cube keytab box-origin k)
                    ))
                (anchor-slots origin N))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; meta-data key-creation related
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn calculate-N [limit]
+  (loop [N 4]
+    (if (< N limit)
+      (recur (* 2 (inc N)))
+      N)))
+
+(defn read-csv-line [line]
+  (take *maxdim* (.split line ",")))
+
+; for initial key-load
+(defn create-key-int-map [files keytab]
+  (let
+    [sets (doall (map (fn [file]
+      (if *noisy?* (println "Reading" file))
+      (with-open [rdr (reader file)]
+        (let [firstline (read-csv-line (first (line-seq rdr)))
+              last-datum? (try (Integer/parseInt (last firstline)) true
+                            (catch Exception e false))
+              keyset (loop [lines (line-seq rdr) md-keyset []]
+                       (if (seq lines)
+                         (let [line (read-csv-line (first lines))
+                               cell (if last-datum? (drop-last line) (seq line))]
+                           (recur (next lines)
+                                  (vec (map-indexed #(clojure.set/union
+                                                       (get md-keyset %1)
+                                                       (sorted-set %2))
+                                                    cell))))
+                         md-keyset))]
+          (if *noisy?* (println "Finished reading" file))
+          keyset)))
+                      files))
+        ; merge keysets..
+     merged-keyset (reduce (fn [set1 set2] (map clojure.set/union set1 set2)) sets)
+     _ (dorun (map #(assert (= clojure.lang.PersistentTreeSet (class %1))) merged-keyset))
+     counts (doall (map count merged-keyset))
+     N (calculate-N (apply max counts))]
+    (println "dims, unique keys per dimension, N:" (count counts) counts N)
+    (doall (map (fn [[dim keys]] (pmap (fn [[idx name]]
+                  (store-raw keytab (str dim "-dimkey-" idx) name)
+                  (store-raw keytab (str dim "-namekey-" name) idx))
+                                                     (map-indexed vector keys))
+                   (println "Finished dim" dim))
+                 (map-indexed vector merged-keyset)))
+    ; return origin and N after storing
+    (let [origin (vec (take (count counts) (repeat 0)))]
+      (store-origin-N keytab origin N)
+      [origin N])))
+
+(defn insert-row-by-row [cube keytab origin datafile N]
+  (with-open [rdr (reader datafile)]
+    (let [firstline (read-csv-line (first (line-seq rdr)))
+          last-datum? (try (Integer/parseInt (last firstline)) true
+                        (catch Exception e false))]
+      (dorun
+        (map-indexed
+          (fn [idx line]
+            (let [line-data (read-csv-line line)
+                  [value cell] (if last-datum?
+                                 [(last line-data) (drop-last line-data)]
+                                 [1 (seq line-data)])]
+              (if *noisy?* (println "Adding" [cell value] "to cube..."))
+              (if (= 0 (mod idx 10000)) (println "Added line" idx))
+              (add-row-to-cube cube keytab origin [cell value] N :sum)))
+          (line-seq rdr)))))
+  (println "Done inserting for" datafile))
+
+

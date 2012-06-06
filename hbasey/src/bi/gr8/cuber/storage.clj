@@ -22,8 +22,9 @@
 
 (def d-hb-fam "dfam")
 (def d-k-hb-fam "dkfam")
-(def d-dyn-fam {:name "d-loc" :type "S"})
-(def d-k-dyn-fam {:name "d-k-id" :type "S"})
+
+(def d-dyn-fam {:name "hash_id" :type "S"})
+(def d-k-dyn-fam d-dyn-fam) ; same table
 
 (def ^:dynamic *noisy?* false)
 (def ^:dynamic *really-store?* true)
@@ -69,14 +70,14 @@
 (defn dyndb-key-table [name]
   (dyndb-table (str name "-keymd")))
 
-(defn store-N [keytab N]
-  (dyndb/put-item (:cred keytab) (:name keytab) {(:name d-k-dyn-fam) "cube-N"
-                                                 "value" (str N)}))
-(defn get-N [keytab]
-  (Integer/parseInt (get (dyndb/get-item (:cred keytab) (:name keytab) "cube-N") "value")))
-
 (defn get-origin-N [keytab]
-  [[0 0] 10])
+  (read-string (get (dyndb/get-item (:cred keytab) (:name keytab) "cube-origin-N") "value")))
+
+(defn store-origin-N [keytab origin N]
+  (dyndb/put-item (:cred keytab) (:name keytab) {(:name d-k-dyn-fam) "cube-origin-N" "value" (str [origin N])}))
+
+(defn get-N [keytab]
+  (second (get-origin-N keytab)))
 
 (defn dyndb-debug [tbl ktbl]
 
@@ -110,7 +111,7 @@
                              (hb/to-bytes d-hb-fam)
                              (hb/to-bytes :sum)
                              val)]
-        (if *noisy?* (println "inc'd" cell "by" res))
+        (if *noisy?* (println "inc'd" cell "by" val "to" res))
         res)
       (let [orig (read-val tab cell :sum)]
         (print "would have inc'd" cell "by" val "to go from" orig "to ")
@@ -140,7 +141,12 @@
   (hb/put tab key :value [d-k-hb-fam col value]))
 
 (defmethod store-raw clojure.lang.PersistentArrayMap [tab key value]
-  (dyndb/put-item (:cred tab) (:name tab) {(:name d-k-dyn-fam) (str key) "value" (str value)}))
+  (try (dyndb/put-item (:cred tab) (:name tab) {(:name d-k-dyn-fam) (str key) "value" (str value)})
+    (catch Exception e ; went over provisioned throughput
+      (println "Went over provisioned throughput for" key value)
+      (Thread/sleep (* 1000 (inc (rand 10))))
+      (println "Retrying" key value)
+      (store-raw tab key value))))
 
 ; Read methods
 

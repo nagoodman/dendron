@@ -68,6 +68,9 @@
 
 (binding [*noisy?* true *really-store?* true] (cube/sum-borders tab keytab [0 0] 10))
 
+  (def a (for [x (range 4) y (range 4) z (range 4)]
+           [[x y z] (read-val tab [x y z] :sum)]))
+
   (def a (for [day (range 10) st (range 10)]
            [[day st] (read-val tab [day st] :sum)]))
 
