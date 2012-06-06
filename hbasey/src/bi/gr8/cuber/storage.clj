@@ -68,7 +68,7 @@
 (def dyndb-tbl dyndb-table) ; alias
 
 (defn dyndb-key-table [name]
-  (dyndb-table (str name "-keymd")))
+  (dyndb-table name));(str name "-keymd")))
 
 (defn get-origin-N [keytab]
   (read-string (get (dyndb/get-item (:cred keytab) (:name keytab) "cube-origin-N") "value")))
