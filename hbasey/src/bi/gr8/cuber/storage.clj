@@ -129,7 +129,7 @@
                    (.setKey k)
                    (.setReturnValues ReturnValue/UPDATED_NEW)
                    (.setAttributeUpdates items)))]
-    (Integer/parseInt (.getN (get (.getAttributes up-result) "value")))))
+    (Long/parseLong (.getN (get (.getAttributes up-result) "value")))))
 
 ; NOTE: using this is ~15% slower in a test.
 (defn store-val-async [agent cube anchor data kind]
@@ -138,15 +138,17 @@
 (defmulti store-raw (fn [tab key value] (class tab)))
 
 (defmethod store-raw HTablePool$PooledHTable [tab key [col value]]
-  (hb/put tab key :value [d-k-hb-fam col value]))
+  (hb/put tab (str key) :value [d-k-hb-fam col (str value)]))
 
 (defmethod store-raw clojure.lang.PersistentArrayMap [tab key value]
   (try (dyndb/put-item (:cred tab) (:name tab) {(:name d-k-dyn-fam) (str key) "value" (str value)})
-    (catch Exception e ; went over provisioned throughput
-      (println "Went over provisioned throughput for" key value)
-      (Thread/sleep (* 1000 (inc (rand 10))))
-      (println "Retrying" key value)
-      (store-raw tab key value))))
+    (catch Exception e ; went over provisioned throughput or something else
+      (println "Exception" (str e) "on" key value)
+      (let [sleep-time (* 1000 (inc (rand 20)))]
+        (println "Retrying in" sleep-time)
+        (Thread/sleep sleep-time)
+        (println "Retrying" key value)
+        (store-raw tab key value)))))
 
 ; Read methods
 
@@ -161,7 +163,8 @@
     nil)))
 
 (defmethod-mem read-name2key :default [tab dim nm]
-  (Integer/parseInt (get (dyndb/get-item (:cred tab) (:name tab) (str dim "-namekey-" nm)) "value")))
+  ;(println dim nm)
+  (Long/parseLong (get (dyndb/get-item (:cred tab) (:name tab) (str dim "-namekey-" nm)) "value")))
 
 (defmulti read-key2name
   "Given the name of a dimension key, return its integer key equivalent."
@@ -179,13 +182,13 @@
   (fn [tab dimensions kind] [(class tab) kind]))
 
 (defmethod read-val [HTablePool$PooledHTable :sum] [tab dimensions kind]
-  (if *noisy?*
-    (hb/with-table [keytab (hb/table "hbase-debug-keymap-table")]
-      (print "reading" dimensions (map-indexed #(read-key2name keytab %1 %2)
-                                               dimensions))))
+  ;(if *noisy?*
+  ;  (hb/with-table [keytab (hb/table "hbase-debug-keymap-table")]
+  ;    (print "reading" dimensions (map-indexed #(read-key2name keytab %1 %2)
+  ;                                             dimensions))))
   (try
     (let [res (hbase-read-long-vals tab dimensions [d-hb-fam :sum])]
-      (if *noisy?* (println " as " res))
+  ;    (if *noisy?* (println " as " res))
       (or res 0))
   (catch NullPointerException e
     0)))
@@ -213,7 +216,7 @@
     value-vec))
 
 (defmethod read-val :default [tab dimensions kind]
-  (let [res (Integer/parseInt (or (get (dyndb/get-item (:cred tab) (:name tab) (str (vec dimensions))) "value") "0"))]
+  (let [res (Long/parseLong (or (get (dyndb/get-item (:cred tab) (:name tab) (str (vec dimensions))) "value") "0"))]
     (if *noisy?* (println "read" dimensions "got" res))
     res))
 

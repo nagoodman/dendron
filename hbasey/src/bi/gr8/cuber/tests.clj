@@ -23,19 +23,23 @@
           (println
             (apply str (drop-last (apply str (map #(str (second %1) ",") row)))))
           (recur (next rows))))))
+  (def blargo4 (take 3 (repeat (concat (interpose nil (range 22)) '(nil)))))
+  (def blargo5 (take 2 (repeat (concat (interpose nil (range 22)) '(nil)))))
+  (def ^:dynamic N 10)
 
   (hbase-debug)
+
 
   (def tab (hb/table "hbase-debug-data-table"))
   (def keytab (hb/table "hbase-debug-keymap-table"))
 
   (let [keytab keytab]
-    (doseq [[dim md] (map-indexed vector blargo3)]
+    (time (doseq [[dim md] (map-indexed vector blargo4)]
       (doseq [[idx [k v]] (map-indexed vector (partition 2 md))]
         ; for building
         (hb/put keytab (str k) :value [d-k-hb-fam (str dim "-dimkey") (str idx)])
         (hb/put keytab (str idx) :value [d-k-hb-fam (str dim "-namekey") (str k)])
-        )))
+        ))))
 
   (defn mapp [result]
     (hb/latest-as-map result :map-family #(keyword (Bytes/toString %))
@@ -57,16 +61,39 @@
         (cube/add-row-to-cube tab keytab [0 0 0] [[x y z] 1] 10 :sum))))
     )
 
-   (binding [*noisy?* true]
-    (dorun (for [x (range 4) y (range 4) z (range 4)]
-      (do (println "adding" [x y z]);(get orig [x y]))
-        (cube/add-row-to-cube tab keytab [0 0 0] [[x y z] 1] 4 :sum)))))
+(binding [*noisy?* false N 22]
+    (dorun (for [x (range N) y (range N)]
+      (do (println "adding" [x y]);(get orig [x y]))
+        (cube/add-row-to-cube tab keytab [0 0] [[x y] 1] N :sum)))))
+(binding [*noisy?* false *really-store?* true] (cube/sum-borders tab keytab [0 0] 22))
+(binding [*noisy?* true] (cube/query tab keytab [21 21] 22 :sum))
 
-(binding [*noisy?* true *really-store?* true] (cube/sum-borders tab keytab [0 0 0] 4))
+(binding [*noisy?* true *really-store?* true] (cube/sum-borders tab keytab [1 1] 10))
+
+
+(cube2csv (for [x (range 22) y (range 22)] [[x y] (read-val tab [x y] :sum)]))
+
+(binding [*noisy?* true N 22]
+    (dorun (for [x (range N) y (range N) z (range N)]
+      (do (println "adding" [x y z]);(get orig [x y]))
+        (cube/add-row-to-cube tab keytab [0 0 0] [[x y z] 1] N :sum)))))
+(binding [*noisy?* true *really-store?* true] (cube/sum-borders tab keytab [0 0 0] 22))
+
+(binding [*noisy?* true] (cube/query tab keytab [21 21 21] 22 :sum))
+
+(binding [*noisy?* true]
+  (dorun (for [x (range 4) y (range 4) z (range 4)]
+           (do (println "adding" [x y z]);(get orig [x y]))
+             (cube/add-row-to-cube tab keytab [0 0 0] [[x y z] 1] 4 :sum)))))
+
+(binding [*noisy?* false *really-store?* true] (cube/sum-borders tab keytab [0 0 0] 4))
 
 (binding [*noisy?* true *really-store?* true] (cube/sum-borders tab keytab [0 0 0] 10))
 
 (binding [*noisy?* true *really-store?* true] (cube/sum-borders tab keytab [0 0] 10))
+
+  (def a (for [x (range 10) y (range 10) z (range 10)]
+           [[x y z] (read-val tab [x y z] :sum)]))
 
   (def a (for [x (range 4) y (range 4) z (range 4)]
            [[x y z] (read-val tab [x y z] :sum)]))
@@ -77,6 +104,8 @@
   (cube2csv a)
 
 (assert (= a '([[0 0] 3] [[0 1] 5] [[0 2] 6] [[0 3] 8] [[0 4] 10] [[0 5] 17] [[0 6] 6] [[0 7] 9] [[0 8] 12] [[0 9] 13] [[1 0] 7] [[1 1] 3] [[1 2] 2] [[1 3] 11] [[1 4] 8] [[1 5] 33] [[1 6] 1] [[1 7] 2] [[1 8] 7] [[1 9] 2] [[2 0] 9] [[2 1] 4] [[2 2] 2] [[2 3] 9] [[2 4] 3] [[2 5] 50] [[2 6] 4] [[2 7] 5] [[2 8] 16] [[2 9] 4] [[3 0] 12] [[3 1] 9] [[3 2] 5] [[3 3] 28] [[3 4] 14] [[3 5] 69] [[3 6] 7] [[3 7] 15] [[3 8] 35] [[3 9] 7] [[4 0] 16] [[4 1] 2] [[4 2] 1] [[4 3] 6] [[4 4] 3] [[4 5] 86] [[4 6] 7] [[4 7] 1] [[4 8] 11] [[4 9] 2] [[5 0] 21] [[5 1] 19] [[5 2] 29] [[5 3] 54] [[5 4] 74] [[5 5] 126] [[5 6] 25] [[5 7] 45] [[5 8] 65] [[5 9] 77] [[6 0] 4] [[6 1] 5] [[6 2] 2] [[6 3] 14] [[6 4] 1] [[6 5] 28] [[6 6] 3] [[6 7] 3] [[6 8] 10] [[6 9] 1] [[7 0] 6] [[7 1] 4] [[7 2] 2] [[7 3] 8] [[7 4] 3] [[7 5] 42] [[7 6] 9] [[7 7] 1] [[7 8] 13] [[7 9] 3] [[8 0] 11] [[8 1] 13] [[8 2] 7] [[8 3] 30] [[8 4] 7] [[8 5] 60] [[8 6] 13] [[8 7] 13] [[8 8] 39] [[8 9] 9] [[9 0] 17] [[9 1] 1] [[9 2] 2] [[9 3] 7] [[9 4] 2] [[9 5] 76] [[9 6] 3] [[9 7] 1] [[9 8] 9] [[9 9] 2])))
+
+  (cube2csv (for [x (range 22) y (range 22)] [[x y] (read-val tab [x y] :sum)]))
 
   ; should be 27
 ; should read 15 vals:
@@ -146,92 +175,10 @@ reading [3 2 3] (3 2 3) as  2
   ; paper is wrong.
 
 
-  ;DYNAMODB
 
+(cube/query tab keytab [3 3 3] 4 :sum)
 
-(def dtab (dyndb-table "dyndb-debug-data-table"))
-(def dkeytab (dyndb-table "dyndb-debug-key-table"))
+(pprint (for [x '(0) z (range 4) y (range 4)]
+  [[x y z] (cube/where-is-cell [x y z] [0 0 0] 4) (read-val tab [x y z] :sum)]))
 
-(dyndb-debug dtab dkeytab)
-
-  ;(store-val tbl [0 0] 3 :sum)
-(time (let [keytab dkeytab]
-        (doseq [[dim md] (map-indexed vector blargo3)]
-          (doseq [[idx [k v]] (map-indexed vector (partition 2 md))]
-            ; for building
-            (store-raw keytab (str dim "-dimkey-" idx) k)
-            ;(println k "=>" idx)
-            (store-raw keytab (str dim "-namekey-" k) idx)
-            ;(println idx "=>" k "\n")
-            ))))
-
-  (binding [*noisy?* true]
-    (for [x (range 10) y (range 10) z (range 10)]
-      (do (println "adding" [x y z]);(get orig [x y]))
-        (cube/add-row-to-cube dtab dkeytab [0 0 0] [[x y z] 1] 10 :sum))))
-
-  (time (for [x (range 10) y (range 10)]
-    (do (println "adding" [x y] (get orig [x y]))
-    (add-row-to-cube tab keytab [0 0] [[x y] (get orig [x y])] 10 :sum))))
-
-  (apply list (cube/sum-cube-borders dtab dkeytab [0 0 0] 10))
-
-
-(def b (for [x (range 10) y (range 10) z (range 10)]
-         [[x y z] (read-val dtab [x y z] :sum)]))
-
-(pprint b)
-
-  (binding [*noisy?* true]
-    (cube/query dtab dkeytab [9 9 9] 10 :sum))
-
-  (binding [*noisy?* true] (cube/query dtab dkeytab [2 2 2] 10 :sum)) 
-
-  (binding [*noisy?* true]
-    (cube/query dtab dkeytab [5 5 5] 10 :sum)) ;216
-
-  (def a (for [day (range 10) st (range 10)]
-           [[day st] (read-val tab [day st] :sum)]))
-
-  (cube2csv a)
-
-  )
-
-(defn test-data-load []
-  (hbase-debug)
-
-  (println "mapping keys to ints...")
-  ;41,1,134
-  (let [tab (hb/table "hbase-debug-data-table")
-        keytab (hb/table "hbase-debug-keymap-table")]
-
-    (cube/create-key-int-map "22kdata.csv" keytab)
-    (println "inserting...")
-    (println (cube/insert-row-by-row tab keytab [0 0 0] "22kdata.csv" 190))
-    (println "summing...")
-    ;(binding [*print-right-margin* 100] (pprint (get-all-border-regions [0 0] 10)))
-    ;(pprint (get-all-border-regions [0 0 0] 190))
-    (println "using those bords")
-    (println (apply list (cube/sum-cube-borders tab keytab [0 0 0] 190)))
-
-
-
-  ))
-
-(defn test-query []
-  (comment
-
-  (def tab (hb/table "hbase-debug-data-table"))
-  (def keytab (hb/table "hbase-debug-keymap-table"))
-  (cube/query tab (map-indexed #(read-key2name keytab %1 %2) [40 0 94]) keytab 190 :sum)
-
-  (def a (for [day (range 41) st (range 134)]
-           [[day st] (read-val tab [day 0 st] :sum)]))
-
-    )
-  (let [tab (hb/table "hbase-debug-data-table")
-        keytab (hb/table "hbase-debug-keymap-table")]
-    (cube/query tab (map-indexed #(read-key2name keytab %1 %2) [40 0 133]) keytab 190 :sum)
-  )
-  )
-
+(binding [*noisy?* true *really-store?* false] (cube/add-row-to-cube tab keytab [0 0 0] [[0 1 1] 1] 4 :sum))

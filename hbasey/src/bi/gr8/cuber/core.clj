@@ -15,12 +15,12 @@
 
 (do (use 'bi.gr8.cuber.core) (ns bi.gr8.cuber.core))
 
-  (binding [*noisy?* true] (time (construct-cube "testwith22k" "22kdata.csv" "22kdata.csv")))
+(binding [*noisy?* true] (time (construct-cube "testwith22k" "22kdata.csv" "22kdata.csv")))
 
-  (defn f [x] (str "/dev/shm/" x))
-  (time (apply construct-cube "testbig" (map f '(On_Time_On_Time_Performance_2001_3.csv On_Time_On_Time_Performance_2001_4.csv))))
+(defn f [x] (str "/dev/shm/" x))
+(time (apply construct-cube "testbig" (map f '(On_Time_On_Time_Performance_2001_3.csv On_Time_On_Time_Performance_2001_4.csv))))
 
-  (query-cube "testwith22k" ["2010-08-10" "DL" "DCA"])
+(query-cube "testwith22k" ["2010-08-10" "DL" "DCA"])
 
 )
 
