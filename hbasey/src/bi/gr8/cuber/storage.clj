@@ -164,7 +164,12 @@
 
 (defmethod-mem read-name2key :default [tab dim nm]
   ;(println dim nm)
-  (Long/parseLong (get (dyndb/get-item (:cred tab) (:name tab) (str dim "-namekey-" nm)) "value")))
+  (try
+    (Long/parseLong (get (dyndb/get-item (:cred tab) (:name tab) (str dim "-namekey-" nm)) "value"))
+  (catch java.lang.NumberFormatException e
+    (println "Problem reading name2key" (str dim "-namekey-" nm))
+    (println "Please verify that key exists and report a bug if it does.")
+    (throw e))))
 
 (defmulti read-key2name
   "Given the name of a dimension key, return its integer key equivalent."
@@ -174,7 +179,8 @@
   (hbase-read-str-vals tab (str k) [d-k-hb-fam (str dim "-dimkey")]))
 
 (defmethod-mem read-key2name :default [tab dim k]
-  (str (get (dyndb/get-item (:cred tab) (:name tab) (str dim "-dimkey-" k)) "value")))
+  (let [res (str (get (dyndb/get-item (:cred tab) (:name tab) (str dim "-dimkey-" k)) "value"))]
+    (if (empty? res) nil res)))
 
 (defmulti read-val
   "0 means either not found or actually 0. To be sure if it doesn't exist,

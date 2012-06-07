@@ -53,8 +53,8 @@
 
 
 (defn names2nums [keytab namedcell]
-  (let [res (map (fn [[dim name]] (read-name2key keytab dim name))
-                 (map-indexed vector namedcell))]
+  (let [res (mapper (fn [[dim name]] (read-name2key keytab dim name))
+                    (map-indexed vector namedcell))]
     (if *noisy?* (println "Converted" namedcell "to" res))
     res))
 (def names2nums (memoize names2nums))
@@ -103,8 +103,8 @@
 (def get-opposing-border (memoize get-opposing-border))
 
 (defn cell-in-keys? [keytab cell]
-  (every? (fn [[dim k]] (read-key2name keytab dim k))
-    (map-indexed vector cell)))
+  (every? identity (mapper (fn [[dim k]] (read-key2name keytab dim k))
+                           (map-indexed vector cell))))
 (def cell-in-keys? (memoize cell-in-keys?))
 
 (defn intersecting-borders [cell anch]
@@ -146,7 +146,7 @@
       (if (not= -1 (.indexOf anchors cell))
         :anchor
         ; check quadrants in parallel, if nil, it's a border cell
-        (if-let [center-q (some identity (mapper in-hypercube?
+        (if-let [center-q (some identity (map in-hypercube?
                                                (gen-centers anchors length)))]
           center-q
           :border)))))
@@ -163,24 +163,25 @@
         (let [anchors-to-update (get-dependent-anchors origin cell N)]
           (if *noisy?* (println cell :anchor))
           (dorun (mapper (fn [anchor]
-                         (if (cell-in-keys? keytab anchor)
-                           (store-val cube anchor data kind)))
-                       anchors-to-update)))
+                           (if (cell-in-keys? keytab anchor)
+                             (store-val cube anchor data kind)))
+                         anchors-to-update)))
       (= location :border)
         (let [anchors-to-update (get-dependent-anchors origin cell N)
               border-to-update (get-opposing-border origin origin cell N)
-              other-borders* (matching-borders border-to-update origin 1)
-              _ (println other-borders*)
-              other-borders (filter (fn [bord] (and (not= cell bord) (every? (fn [[ai ci]] (>= ai ci)) (partition 2 (interleave bord cell))))) other-borders*)
-              _ (println other-borders)
+              ;other-borders* (matching-borders border-to-update origin 1)
+              ;_ (println other-borders*)
+              ;other-borders (filter (fn [bord] (and (not= cell bord) (every? (fn [[ai ci]] (>= ai ci)) (partition 2 (interleave bord cell))))) other-borders*)
+              ;_ (println other-borders)
               to-updates (if (not= cell border-to-update)
                           (conj anchors-to-update border-to-update cell)
                           (conj anchors-to-update border-to-update))]
           (if *noisy?* (println cell :border))
           (dorun (mapper (fn [to-update]
-                         (if (cell-in-keys? keytab to-update)
-                           (store-val cube to-update data kind)))
-                       (concat to-updates other-borders))))
+                           (if (cell-in-keys? keytab to-update)
+                             (store-val cube to-update data kind)))
+                         to-updates)))
+                       ;(concat to-updates other-borders))))
       :else
         (let [anchors-to-update (get-dependent-anchors origin cell N)
               anchor (map #(long (- %1 %2)) location (repeat (/ N 4)))
@@ -192,9 +193,9 @@
                                              intersecting-borders))]
           (if *noisy?* (println cell :recur location))
           (dorun (mapper (fn [to-update]
-                         (if (cell-in-keys? keytab to-update)
-                           (store-val cube to-update data kind)))
-                       (concat anchors-to-update borders-to-update)))
+                           (if (cell-in-keys? keytab to-update)
+                             (store-val cube to-update data kind)))
+                         (concat anchors-to-update borders-to-update)))
           (add-row-to-cube cube keytab (map + anchor (repeat 1)) row (dec (/ N 2)) kind))
       )))
 
@@ -309,12 +310,12 @@
     (println "dims, unique keys per dimension, N:" (count counts) counts N)
     (let [key-promises
           (map (fn [[dim keys]]
-                 (dorun (map
-                          (fn [[idx name]]
-                            (future
-                              (store-raw keytab (str dim "-dimkey-" idx) name)
-                              (store-raw keytab (str dim "-namekey-" name) idx)))
-                          (map-indexed vector keys))))
+                 (map
+                   (fn [[idx name]]
+                     (future
+                       (store-raw keytab (str dim "-dimkey-" idx) name)
+                       (store-raw keytab (str dim "-namekey-" name) idx)))
+                   (map-indexed vector keys)))
                (map-indexed vector merged-keyset))]
       ; wait for them to finish
       (doseq [[dim promise] (seque 30 (map-indexed vector key-promises))]

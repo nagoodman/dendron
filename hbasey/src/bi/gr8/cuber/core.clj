@@ -31,6 +31,7 @@
   (let [tbl (dyndb-table name)
         tbl-keys (dyndb-key-table name)]
     (try (create-table tbl :dyndb {:hash-key d-dyn-fam :throughput data-throughput})
+      (println "Waiting 45 secs for table creation...")
       (Thread/sleep 45000)
       (println "Table created.")
       (catch Exception e (println "Tables already exist.")))
