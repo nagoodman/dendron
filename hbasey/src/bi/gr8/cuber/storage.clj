@@ -73,8 +73,8 @@
 (defn get-origin-N [keytab]
   (read-string (get (dyndb/get-item (:cred keytab) (:name keytab) "cube-origin-N") "value")))
 
-(defn store-origin-N [keytab origin N]
-  (dyndb/put-item (:cred keytab) (:name keytab) {(:name d-k-dyn-fam) "cube-origin-N" "value" (str [origin N])}))
+(defn store-origin-N [keytab origin N counts]
+  (dyndb/put-item (:cred keytab) (:name keytab) {(:name d-k-dyn-fam) "cube-origin-N" "value" (str [origin N counts])}))
 
 (defn get-N [keytab]
   (second (get-origin-N keytab)))

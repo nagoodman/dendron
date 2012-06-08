@@ -36,14 +36,14 @@
       (println "Table created.")
       (catch Exception e (println "Tables already exist.")))
     (if construct-keys (println "Creating keys..."))
-    (let [[origin N] (if construct-keys
-                       (cube/create-key-int-map csvs tbl-keys)
-                       (get-origin-N tbl-keys))]
+    (let [[origin N counts] (if construct-keys
+                              (cube/create-key-int-map csvs tbl-keys)
+                              (get-origin-N tbl-keys))]
       (println "Prepped for cube with origin" origin "and size" N)
       (println "Inserting data...")
       (dorun (map #(cube/insert-row-by-row tbl tbl-keys origin %1 N) csvs))
       (println "Summing borders...")
-      (cube/sum-borders tbl tbl-keys origin N)
+      (cube/sum-borders tbl tbl-keys origin N counts)
       (println "Finished."))))
 
 (defn query-cube [name namedcell]
