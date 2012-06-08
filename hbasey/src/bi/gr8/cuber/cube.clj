@@ -22,6 +22,12 @@
 
 (def ^:dynamic *maxdim* 10)
 
+(defn calculate-N [limit]
+  (loop [N 4]
+    (if (< N limit)
+      (recur (* 2 (inc N)))
+      N)))
+
 ;;;;;;;;;;;;;;;;;;
 ; querying-related
 ;;;;;;;;;;;;;;;;;;
@@ -215,17 +221,26 @@
             (apply combin/cartesian-product values))))
 (def get-border-cells (memoize get-border-cells))
 
+(comment
+
+(let [anchor [0 0 0] N 4 half (/ N 2)]
+  (map #(range %1 (+ %1 half)) anchor))
+
+)
+
+;(defn matches-a-dim? [cell anchor]
+;  (some true? (map = cell anchor)))
+
 (defn get-border-cells-improved
   "For a particular anchor cell, get its corresponding border cells that exist
   in a sorted lazy seq. It works by holding the first dimension, then for
   the other dimensions iterating to the N val in that dimension. It does not
   compute non-existent border cells known from Ns."
-  [anchor Ns]
-  (let [halfs (map #(/ %1 2) Ns)
+  [anchor N Ns]
+  (let [halfs (map #(min (/ N 2) (/ %1 2)) Ns)
         anch (set anchor)
-        values (map #(range %1 (+ %1 half)) anchor)]
-    (filter #(> (count (clojure.set/intersection anch (set %1))) 0)
-            (apply combin/cartesian-product values))))
+        values (map-indexed #(range %2 (+ %2 (nth halfs %1))) anchor)]
+    (filter #(some anch %1) (apply combin/cartesian-product values))))
 
 (defn calc-bord-sum-value
   "Pre-condition 1: all dimensions obey the constraint that at least
@@ -269,15 +284,9 @@
       ; for every level, we have 2^d "boxes" where each dim is length k
       ; and the anchor is the box-origin for sub-boxes
       (dorun (mapper
-               (fn [box-origin]
+               (fn [box-origin box-num]
                  (if (cell-in-keys? keytab box-origin)
-                   (let [bord-cells (get-border-cells box-origin N)
-                         _ (comment bord-cells (keep identity
-                                          (mapper #(if (cell-in-keys? keytab %1)
-                                                     %1
-                                                     nil)
-                                                  bord-cells*)))]
-                     (if *noisy?* (println "bord-cells:" bord-cells))
+                   (let [bord-cells (get-border-cells-improved box-origin N counts)]
                      (dorun (map (fn [cell]
                                    (let [val (calc-bord-sum-value cube cell box-origin)]
                                      (if (not (zero? val))
@@ -285,19 +294,13 @@
                                  bord-cells))
                      ; then, recursively apply this algorithm
                      ; in another thread.
-                     (future (sum-borders cube keytab (map inc box-origin) k))
+                     (future (sum-borders cube keytab (map inc box-origin) k counts))
                      )))
-               (anchor-slots origin N))))))
+               (anchor-slots origin N) (iterate inc 0))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; meta-data key-creation related
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn calculate-N [limit]
-  (loop [N 4]
-    (if (< N limit)
-      (recur (* 2 (inc N)))
-      N)))
 
 (defn read-csv-line [line]
   (take *maxdim* (.split line ",")))
