@@ -188,13 +188,9 @@
   (fn [tab dimensions kind] [(class tab) kind]))
 
 (defmethod read-val [HTablePool$PooledHTable :sum] [tab dimensions kind]
-  ;(if *noisy?*
-  ;  (hb/with-table [keytab (hb/table "hbase-debug-keymap-table")]
-  ;    (print "reading" dimensions (map-indexed #(read-key2name keytab %1 %2)
-  ;                                             dimensions))))
   (try
     (let [res (hbase-read-long-vals tab dimensions [d-hb-fam :sum])]
-  ;    (if *noisy?* (println " as " res))
+      (if *noisy?* (println "read" dimensions "got" (or res 0)))
       (or res 0))
   (catch NullPointerException e
     0)))

@@ -27,6 +27,7 @@
     (if (< N limit)
       (recur (* 2 (inc N)))
       N)))
+(def calculate-N (memoize calculate-N))
 
 ;;;;;;;;;;;;;;;;;;
 ; querying-related
@@ -175,21 +176,22 @@
       (= location :border)
         (let [anchors-to-update (get-dependent-anchors origin cell N)
               border-to-update (get-opposing-border origin origin cell N)
-              ;other-borders* (matching-borders border-to-update origin 1)
-              ;_ (println other-borders*)
-              ;other-borders (filter (fn [bord] (and (not= cell bord) (every? (fn [[ai ci]] (>= ai ci)) (partition 2 (interleave bord cell))))) other-borders*)
-              ;_ (println other-borders)
-              to-updates (if (not= cell border-to-update)
-                          (conj anchors-to-update border-to-update cell)
-                          (conj anchors-to-update border-to-update))]
+              other-borders* (apply concat (map #(intersecting-borders %1 cell) anchors-to-update))
+              other-borders (concat other-borders* (apply concat (map #(intersecting-borders (take (count origin) (repeat (/ N 2))) %1) (concat [cell] [border-to-update]))))
+              to-updates (conj anchors-to-update border-to-update cell)]
           (if *noisy?* (println cell :border))
           (dorun (mapper (fn [to-update]
-                           (if (cell-in-keys? keytab to-update)
+                           (if (and (every? true? (map <= cell to-update))
+                                    (cell-in-keys? keytab to-update)
+                                    (keyword? (where-is-cell to-update origin N)))
                              (store-val cube to-update data kind)))
-                         to-updates)))
-                       ;(concat to-updates other-borders))))
+                       (set (concat to-updates other-borders)))))
       :else
-        (let [anchors-to-update (get-dependent-anchors origin cell N)
+        (let [
+              anchors-to-update (get-dependent-anchors origin cell N)
+              b-border-to-update (get-opposing-border origin origin cell N)
+              b-other-borders* (apply concat (map #(intersecting-borders %1 cell) anchors-to-update))
+              b-other-borders (concat b-other-borders* (apply concat (map #(intersecting-borders (take (count origin) (repeat (/ N 2))) %1) (concat [cell] [b-border-to-update]))))
               anchor (map #(long (- %1 %2)) location (repeat (/ N 4)))
               intersecting-borders (intersecting-borders cell anchor)
               borders-to-update (filter identity
@@ -199,9 +201,11 @@
                                              intersecting-borders))]
           (if *noisy?* (println cell :recur location))
           (dorun (mapper (fn [to-update]
-                           (if (cell-in-keys? keytab to-update)
+                           (if (and (every? true? (map <= cell to-update))
+                                    (cell-in-keys? keytab to-update)
+                                    (keyword? (where-is-cell to-update origin N)))
                              (store-val cube to-update data kind)))
-                         (concat anchors-to-update borders-to-update)))
+                         (set (concat anchors-to-update borders-to-update b-other-borders))))
           (add-row-to-cube cube keytab (map + anchor (repeat 1)) row (dec (/ N 2)) kind))
       )))
 
@@ -226,10 +230,78 @@
 (let [anchor [0 0 0] N 4 half (/ N 2)]
   (map #(range %1 (+ %1 half)) anchor))
 
-)
 
-;(defn matches-a-dim? [cell anchor]
-;  (some true? (map = cell anchor)))
+
+(time (count (get-border-cells-improved [0 0 0 0 0 0 0 0 0 0] (calculate-N 6000) [10 1 1 10 3000 12 1 12 12 1])))
+
+(time (count (get-border-cells-no-filter [0 0 0 0 0 0 0 0 0 0] (calculate-N 6000) [10 1 1 10 3000 12 1 12 12 1])))
+
+(time (count (get-border-cells-imp [0 0 0 0 0 0 0 0 0 0] (calculate-N 6000) [10 1 1 10 3000 12 1 12 12 1])))
+
+
+  (get-border-cells [0 0 0] 10)
+
+(let [v-seqs [(range 5) (range 5) (range 1 5)]
+      lst-one (last v-seqs)
+      ]
+  (if-let [rst (next lst-one)]
+    (assoc 
+(loop [i 2] 
+  (if (= i -1) nil
+    (if-let [rst (next (v-seqs i))]
+      (assoc v-seqs i rst)
+      (recur (dec i) (assoc v-seqs i ([(range 5) (range 5) (range 5)] i))))))
+
+))))
+
+;(time (count (doall (get-border-cells-improved [0 0 0 0] 190 [10 10 10 10]))))
+;(time (count (doall (get-border-cells [0 0 0 0] 10))))
+
+(defn pseudo-cartesian-product
+  "All the ways to take one item from each sequence filtering out those that
+  don't have a dimension matching with required."
+  [required & seqs]
+  (let [lst-idx (dec (count required))
+        sec-lst-idx (dec lst-idx)
+        lst-val (long (required lst-idx))
+        v-orig-seqs (vec seqs)
+        orig-first (first seqs)
+        matches-a-dim? (fn [cell] (some true? (map = cell required)))
+        increment (fn [v-seqs]
+                    (loop [i lst-idx, v-seqs v-seqs]
+                      (if (= i -1) nil
+                        (if-let [rst (next (v-seqs i))]
+                          (assoc v-seqs i rst)
+                          (recur (dec i) (assoc v-seqs i (v-orig-seqs i)))))))
+        step
+        (fn step [v-seqs]
+          (when-let [product (and v-seqs (map first v-seqs))]
+            (if (matches-a-dim? product)
+              (cons product (lazy-seq (step (increment v-seqs))))
+              (if-let [rst (next (v-seqs sec-lst-idx))]
+                (let [;others (lazy-seq
+                      ;         (step (increment
+                      ;                 (assoc v-seqs
+                      ;                        lst-idx '(nil)
+                      ;                        sec-lst-idx '(nil)))))
+                      [nxt & rst] (pmap #(assoc (vec product)
+                                                sec-lst-idx %1
+                                                lst-idx lst-val)
+                                        rst)]
+                  (cons nxt (concat rst)))); others))))
+              )))]
+    (when (every? first seqs)
+      (lazy-seq (apply concat (pmap (fn [dim1]
+              (lazy-seq (step (assoc v-orig-seqs 0 (range dim1 (+ 2 dim1)))))
+              )
+            (conj (drop 2 orig-first) (first orig-first)))))
+      ;(lazy-seq (step v-orig-seqs))
+      )))
+
+(defn pfilter [pred coll]
+  (map second
+    (filter first
+      (pmap (fn [item] [(pred item) item]) coll))))
 
 (defn get-border-cells-improved
   "For a particular anchor cell, get its corresponding border cells that exist
@@ -238,9 +310,36 @@
   compute non-existent border cells known from Ns."
   [anchor N Ns]
   (let [halfs (map #(min (/ N 2) (/ %1 2)) Ns)
-        anch (set anchor)
         values (map-indexed #(range %2 (+ %2 (nth halfs %1))) anchor)]
-    (filter #(some anch %1) (apply combin/cartesian-product values))))
+    (apply pseudo-cartesian-product anchor values)))
+
+(defn get-border-cells-imp
+  [anchor N Ns]
+  (let [halfs (map #(min (/ N 2) (/ %1 2)) Ns)
+        values (map #(range %1 (+ %1 %2)) anchor halfs)]
+    (apply concat (pmap (fn [cs] (pfilter #(some true? (map = anchor %1)) cs))
+            (partition-all 512 (apply combin/cartesian-product values))))))
+
+(defn get-border-cells-no-filter
+  [anchor N Ns]
+  (let [halfs (map #(min (/ N 2) (/ %1 2)) Ns)
+        values (map-indexed #(range %2 (+ %2 (nth halfs %1))) anchor)]
+    (apply combin/cartesian-product values)))
+
+(defn memo-limited
+  "Same as memoize but keeps a max of 5000 lookups."
+  [f]
+  (let [mem (atom {})]
+    (fn [& args]
+      (if (> (count @mem) 5000)
+        (swap! mem #(into {} (drop 200 %1))))
+      (if-let [e (find @mem args)]
+        (val e)
+        (let [ret (apply f args)]
+          (swap! mem assoc args ret)
+          ret)))))
+
+(def read-bord-val (memo-limited read-val))
 
 (defn calc-bord-sum-value
   "Pre-condition 1: all dimensions obey the constraint that at least
@@ -255,16 +354,16 @@
         differing-dims (keep-indexed #(if (not= (get cell %1) %2) %1) left-bound)
         to-add (map #(assoc cell %1 (dec (get cell %1))) differing-dims)
         to-sub (reduce #(assoc %1 %2 (dec (get cell %2))) cell differing-dims)]
-    (if *noisy?* (do (println "left:" left-bound "diff:" differing-dims "add:" to-add "sub:" to-sub)))
+    (if *noisy?* (println "left:" left-bound "diff:" differing-dims "add:" to-add "sub:" to-sub))
     (cond
       (= to-sub cell) 
         0 ; neighbor to anchor
       (= to-sub (first to-add))
-        (read-val cube to-sub :sum) ; left-bound "1 away"
+        (read-bord-val cube to-sub :sum) ; left-bound "1 away"
       ; else "more than 1 away"
       :else (apply +
-                   (conj (mapper #(read-val cube %1 :sum) to-add)
-                         (* -1 (read-val cube to-sub :sum)))))))
+                   (conj (mapper #(read-bord-val cube %1 :sum) to-add)
+                         (* -1 (read-bord-val cube to-sub :sum)))))))
 
 (defn log2 [x]
   (long (Math/floor (/ (Math/log x) (Math/log 2)))))
@@ -279,19 +378,23 @@
         Ns (map calculate-N counts)
         levels (log2 N)
         k (dec (/ N 2))]
-    (println "Levels to go from" origin ":" (dec levels))
+    (println "Levels to go from" origin ":" (dec levels)
+             "(" (str (java.util.Date.)) ")")
     (if (> levels 0)
       ; for every level, we have 2^d "boxes" where each dim is length k
       ; and the anchor is the box-origin for sub-boxes
       (dorun (mapper
                (fn [box-origin box-num]
                  (if (cell-in-keys? keytab box-origin)
-                   (let [bord-cells (get-border-cells-improved box-origin N counts)]
-                     (dorun (map (fn [cell]
+                   (let [bord-cells (get-border-cells-imp box-origin N Ns)]
+                     (dorun (map (fn [cell bci]
+                     (if (zero? (mod bci 50000)) (println "bci:" bci
+                                                          origin
+                                                          (str (java.util.Date.))))
                                    (let [val (calc-bord-sum-value cube cell box-origin)]
                                      (if (not (zero? val))
                                        (store-val cube cell val :sum))))
-                                 bord-cells))
+                                 bord-cells (iterate inc 0)))
                      ; then, recursively apply this algorithm
                      ; in another thread.
                      (future (sum-borders cube keytab (map inc box-origin) k counts))
@@ -379,7 +482,7 @@
             (seque 100000 (line-seq rdr)))]
       (dorun (pmap (fn [[idx promise]]
                      (deref promise)
-                     (if (= 0 (mod idx 5000))
+                     (if (= 0 (mod idx 10000))
                        (println "Finished line" idx "at"
                                 (str (java.util.Date.)))))
                    (seque 30 (map-indexed vector adder-promises))))))

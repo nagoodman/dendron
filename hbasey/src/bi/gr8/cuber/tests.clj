@@ -23,7 +23,7 @@
           (println
             (apply str (drop-last (apply str (map #(str (second %1) ",") row)))))
           (recur (next rows))))))
-  (def blargo4 (take 3 (repeat (concat (interpose nil (range 22)) '(nil)))))
+  (def blargo4 (take 6 (repeat (concat (interpose nil (range 22)) '(nil)))))
   (def blargo5 (take 2 (repeat (concat (interpose nil (range 22)) '(nil)))))
   (def ^:dynamic N 10)
 
@@ -50,9 +50,9 @@
     (pprint (doall (map mapp (-> res .iterator iterator-seq)))))
 
   (binding [*noisy?* true]
-    (for [x (range 10) y (range 10)]
+    (dorun (for [x (range 10) y (range 10)]
       (do (println "adding" [x y] (get orig [x y]))
-        (cube/add-row-to-cube tab keytab [0 0] [[x y] (get orig [x y])] 10 :sum)))
+        (cube/add-row-to-cube tab keytab [0 0] [[x y] (get orig [x y])] 10 :sum))))
     )
 
   (binding [*noisy?* true]
@@ -86,11 +86,11 @@
            (do (println "adding" [x y z]);(get orig [x y]))
              (cube/add-row-to-cube tab keytab [0 0 0] [[x y z] 1] 4 :sum)))))
 
-(binding [*noisy?* false *really-store?* true] (cube/sum-borders tab keytab [0 0 0] 4))
+(binding [*noisy?* true *really-store?* true] (cube/sum-borders tab keytab [0 0 0] 4 [4 4 4]))
 
-(binding [*noisy?* true *really-store?* true] (cube/sum-borders tab keytab [0 0 0] 10))
+(binding [*noisy?* true *really-store?* true] (cube/sum-borders tab keytab [0 0 0] 10 [10 10 10]))
 
-(binding [*noisy?* true *really-store?* true] (cube/sum-borders tab keytab [0 0] 10))
+(binding [*noisy?* true *really-store?* true] (cube/sum-borders tab keytab [0 0] 10 [10 10]))
 
   (def a (for [x (range 10) y (range 10) z (range 10)]
            [[x y z] (read-val tab [x y z] :sum)]))
@@ -178,7 +178,8 @@ reading [3 2 3] (3 2 3) as  2
 
 (cube/query tab keytab [3 3 3] 4 :sum)
 
-(pprint (for [x '(0) z (range 4) y (range 4)]
-  [[x y z] (cube/where-is-cell [x y z] [0 0 0] 4) (read-val tab [x y z] :sum)]))
+(assert (= (for [x (range 4) z (range 4) y (range 4)]
+  [[x y z] (cube/where-is-cell [x y z] [0 0 0] 4) (read-val tab [x y z] :sum)])
+           '([[0 0 0] :anchor 1] [[0 1 0] :border 1] [[0 2 0] :anchor 3] [[0 3 0] :border 1] [[0 0 1] :border 1] [[0 1 1] :border 1] [[0 2 1] :border 3] [[0 3 1] :border 1] [[0 0 2] :anchor 3] [[0 1 2] :border 3] [[0 2 2] :anchor 9] [[0 3 2] :border 3] [[0 0 3] :border 1] [[0 1 3] :border 1] [[0 2 3] :border 3] [[0 3 3] :border 1] [[1 0 0] :border 1] [[1 1 0] :border 1] [[1 2 0] :border 3] [[1 3 0] :border 1] [[1 0 1] :border 1] [[1 1 1] (1 1 1) 1] [[1 2 1] :border 3] [[1 3 1] (1 3 1) 1] [[1 0 2] :border 3] [[1 1 2] :border 3] [[1 2 2] :border 9] [[1 3 2] :border 3] [[1 0 3] :border 1] [[1 1 3] (1 1 3) 1] [[1 2 3] :border 3] [[1 3 3] (1 3 3) 1] [[2 0 0] :anchor 3] [[2 1 0] :border 3] [[2 2 0] :anchor 9] [[2 3 0] :border 3] [[2 0 1] :border 3] [[2 1 1] :border 3] [[2 2 1] :border 9] [[2 3 1] :border 3] [[2 0 2] :anchor 9] [[2 1 2] :border 9] [[2 2 2] :anchor 27] [[2 3 2] :border 9] [[2 0 3] :border 3] [[2 1 3] :border 3] [[2 2 3] :border 9] [[2 3 3] :border 3] [[3 0 0] :border 1] [[3 1 0] :border 1] [[3 2 0] :border 3] [[3 3 0] :border 1] [[3 0 1] :border 1] [[3 1 1] (3 1 1) 1] [[3 2 1] :border 3] [[3 3 1] (3 3 1) 1] [[3 0 2] :border 3] [[3 1 2] :border 3] [[3 2 2] :border 9] [[3 3 2] :border 3] [[3 0 3] :border 1] [[3 1 3] (3 1 3) 1] [[3 2 3] :border 3] [[3 3 3] (3 3 3) 1])))
 
-(binding [*noisy?* true *really-store?* false] (cube/add-row-to-cube tab keytab [0 0 0] [[0 1 1] 1] 4 :sum))
+(binding [*noisy?* true *really-store?* false] (cube/add-row-to-cube tab keytab [0 0 0] [[1 1 1] 1] 4 :sum))
