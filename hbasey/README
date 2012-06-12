@@ -19,7 +19,7 @@ jar file.
 
 If you have the jar already just run it like a normal jar file but with rlwrap.
 
-rlwrap java -jar dendron-1.0.0-SNAPSHOT-standalone.jar
+rlwrap java -server -jar dendron-1.0.0-SNAPSHOT-standalone.jar
 
 It will launch a repl. Once it has launched, run:
 
@@ -50,37 +50,35 @@ If it is not numeric, the default is to use the value 1
 and the data will be interpreted as counts and all fields contribute
 to the dimensionality count.
 
+Currently we set an upper limit of 10 on the dimensionality.
+
 Before beginning make sure you place any necessary AWS credentials in "credentials.clj", there is a template included in this directory.
 
 From the repl:
 
 (construct-cube "cubename" "csvlocation")
 
-This will create the DynamoDB table "cubename" and "cubename-keymd" with
-throughput provisions {:read 50 :write 40} and {:read 50 :write 5} respectively.
-
-On a small single-core instance, loading a 22k file takes about 2.5 minutes
-with write throughput at 500 but about 32 minutes with write throughput at 70.
-Since we're charged by the hour, the throughput we want really only depends
-on whether we use more than one table per set of data or not, and whether
-we want to load it really fast. During development time it makes sense
-to modify it to 500 since 50 cents per hour is still cheap compared to waiting.
-500 is about the magic number where cpu/disk-IO overhead dominates. On a
-large instance, the time was not significantly different, thus it's really
-disk-IO.
+This will create the DynamoDB table "cubename" with throughput provisions
+{:read 100 :write 1000}.
 
 45 seconds will be spent sleeping for the creation to complete.
-If the tables already exist, the function will continue on
-and will not delete them. To delete both tables:
+If the table already exists, the function will continue on
+and will not delete it. It will recreate the keys, you can skip this step
+by binding *construct-keys?* to false.
+
+To delete a table outside the AWS web console:
 
 (clean-table (dyndb-table "cubename"))
-(clean-table (dyndb-key-table "cubename"))
 
 If desired you can specify even more csv files during creation that will be unioned:
 
 (construct-cube "cubename" "csvlocation" "csvlocation2" ...)
 
-Note this currently requires two passes on the data.
+Note this currently requires two passes on the data. Significant speedups are
+achievable if the CSV files are stored in /dev/shm. A future improvement
+may cycle them through /dev/shm in the background before reading.
+Each file is read sequentially, each row is kicked off using a future
+to be processed in another thread.
 
 ## Querying the Cube
 
