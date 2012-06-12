@@ -14,7 +14,6 @@
   "This is for demo purposes."
 
 (do (use 'bi.gr8.cuber.core) (ns bi.gr8.cuber.core))
-
 (binding [*noisy?* true] (time (construct-cube "testwith22k" "22kdata.csv" "22kdata.csv")))
 
 (defn f [x] (str "/dev/shm/" x))
@@ -22,10 +21,12 @@
 
 (query-cube "testwith22k" ["2010-08-10" "DL" "DCA"])
 
+(query-cube "testbig" ^:numeric [0 0 0 0 0 0 0 0 0 0])
+
 )
 
 (def data-throughput {:read 100 :write 1000})
-(def construct-keys true)
+(def ^:dynamic *construct-keys?* true)
 
 (defn construct-cube [name & csvs]
   (let [tbl (dyndb-table name)
@@ -35,8 +36,8 @@
       (Thread/sleep 45000)
       (println "Table created.")
       (catch Exception e (println "Tables already exist.")))
-    (if construct-keys (println "Creating keys..."))
-    (let [[origin N counts] (if construct-keys
+    (if *construct-keys?* (println "Creating keys..."))
+    (let [[origin N counts] (if *construct-keys?*
                               (cube/create-key-int-map csvs tbl-keys)
                               (get-origin-N tbl-keys))]
       (println "Prepped for cube with origin" origin "and size" N)
@@ -44,7 +45,8 @@
       (dorun (map #(cube/insert-row-by-row tbl tbl-keys origin %1 N) csvs))
       (println "Summing borders...")
       (cube/sum-borders tbl tbl-keys origin N counts)
-      (println "Finished."))))
+      (println "Finished.")
+      (if cube/collect-stats? (println @cube/statistics)))))
 
 (defn query-cube [name namedcell]
   (let [tbl (dyndb-table name)

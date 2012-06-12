@@ -57,11 +57,13 @@
   (let [tbl "hbase-debug-data-table"
         ktbl "hbase-debug-keymap-table"]
     (try 
-    (clean-table tbl)
-    (clean-table ktbl)
+    (let [c1 (future (clean-table tbl))
+          c2 (future (clean-table ktbl))]
+      @c1 @c2)
       (catch Exception e nil))
-    (create-table tbl :hbase d-hb-fam)
-    (create-table ktbl :hbase d-k-hb-fam)))
+    (let [c1 (future (create-table tbl :hbase d-hb-fam))
+          c2 (future (create-table ktbl :hbase d-k-hb-fam))]
+      @c1 @c2)))
 
 (defn dyndb-table [name]
   {:name name :cred {:access-key accessKey :secret-key secretKey}})

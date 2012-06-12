@@ -22,6 +22,9 @@
 
 (def ^:dynamic *maxdim* 10)
 
+(def collect-stats? true)
+(def statistics (atom {:store-calls 0 :rows 0}))
+
 (defn calculate-N [limit]
   (loop [N 4]
     (if (< N limit)
@@ -143,7 +146,6 @@
                         ; (assuming its boundaries are N/4 in length in each
                         ; dimension)
                         (let [diffs (map keydist cell center)]
-                          ;(if (< (count (filter #(>= %1 length) diffs)) d-1)
                           (if (not-any? #(>= %1 length) diffs)
                             ; this is the center that this cell belongs in
                             center
@@ -162,7 +164,9 @@
 ; called for each row
 (defn add-row-to-cube ; set kind=:sum
   [cube keytab origin row N kind]
+  (if (and collect-stats? (every? zero? origin)) (swap! statistics assoc :rows (inc (:rows @statistics))))
   (let [[namedcell data] row
+        dims (count origin)
         cell (names2nums keytab namedcell)
         location (where-is-cell cell origin N)]
     (cond
@@ -170,44 +174,40 @@
         (let [anchors-to-update (get-dependent-anchors origin cell N)]
           (if *noisy?* (println cell :anchor))
           (dorun (mapper (fn [anchor]
-                           (if (cell-in-keys? keytab anchor)
+                           (when (cell-in-keys? keytab anchor)
+                             (if collect-stats? (swap! statistics assoc :store-calls (inc (:store-calls @statistics))))
                              (store-val cube anchor data kind)))
                          anchors-to-update)))
-      (= location :border)
+      :else
         (let [anchors-to-update (get-dependent-anchors origin cell N)
               border-to-update (get-opposing-border origin origin cell N)
               other-borders* (apply concat (map #(intersecting-borders %1 cell) anchors-to-update))
-              other-borders (concat other-borders* (apply concat (map #(intersecting-borders (take (count origin) (repeat (/ N 2))) %1) (concat [cell] [border-to-update]))))
-              to-updates (conj anchors-to-update border-to-update cell)]
-          (if *noisy?* (println cell :border))
+              other-borders (concat other-borders* (apply concat (map #(intersecting-borders (take dims (repeat (/ N 2))) %1) (concat [cell] [border-to-update]))))
+              to-updates (conj anchors-to-update border-to-update cell)
+              recur (atom nil)
+              cells-to-store
+              (if (= location :border)
+                (do (if *noisy?* (println cell :border))
+                    (set (concat to-updates other-borders)))
+                (let 
+                  [anchor (map #(long (- %1 %2)) location (repeat (/ N 4)))
+                   intersecting-borders (intersecting-borders cell anchor)
+                   borders-to-update (filter identity
+                                             (map #(let [ret (get-opposing-border
+                                                               origin anchor %1 N)]
+                                                     (if (= ret %1) nil ret))
+                                                  intersecting-borders))]
+                  (if *noisy?* (println cell :recur location))
+                  (reset! recur (future (add-row-to-cube cube keytab (map inc anchor) row (dec (/ N 2)) kind)))
+                  (set (concat anchors-to-update borders-to-update other-borders))))]
           (dorun (mapper (fn [to-update]
-                           (if (and (every? true? (map <= cell to-update))
+                           (when (and (every? true? (map <= cell to-update))
                                     (cell-in-keys? keytab to-update)
                                     (keyword? (where-is-cell to-update origin N)))
+                             (if collect-stats? (swap! statistics assoc :store-calls (inc (:store-calls @statistics))))
                              (store-val cube to-update data kind)))
-                       (set (concat to-updates other-borders)))))
-      :else
-        (let [
-              anchors-to-update (get-dependent-anchors origin cell N)
-              b-border-to-update (get-opposing-border origin origin cell N)
-              b-other-borders* (apply concat (map #(intersecting-borders %1 cell) anchors-to-update))
-              b-other-borders (concat b-other-borders* (apply concat (map #(intersecting-borders (take (count origin) (repeat (/ N 2))) %1) (concat [cell] [b-border-to-update]))))
-              anchor (map #(long (- %1 %2)) location (repeat (/ N 4)))
-              intersecting-borders (intersecting-borders cell anchor)
-              borders-to-update (filter identity
-                                        (map #(let [ret (get-opposing-border
-                                                          origin anchor %1 N)]
-                                                (if (= ret %1) nil ret))
-                                             intersecting-borders))]
-          (if *noisy?* (println cell :recur location))
-          (dorun (mapper (fn [to-update]
-                           (if (and (every? true? (map <= cell to-update))
-                                    (cell-in-keys? keytab to-update)
-                                    (keyword? (where-is-cell to-update origin N)))
-                             (store-val cube to-update data kind)))
-                         (set (concat anchors-to-update borders-to-update b-other-borders))))
-          (add-row-to-cube cube keytab (map + anchor (repeat 1)) row (dec (/ N 2)) kind))
-      )))
+                         cells-to-store))
+          (if @recur (deref @recur))))))
 
 ;;;;;;;;;;;;;;;;;;
 ; last step, sum up border cells
@@ -394,12 +394,12 @@
                                    (let [val (calc-bord-sum-value cube cell box-origin)]
                                      (if (not (zero? val))
                                        (store-val cube cell val :sum))))
-                                 bord-cells (iterate inc 0)))
+                                 bord-cells (range)))
                      ; then, recursively apply this algorithm
                      ; in another thread.
                      (future (sum-borders cube keytab (map inc box-origin) k counts))
                      )))
-               (anchor-slots origin N) (iterate inc 0))))))
+               (anchor-slots origin N) (range))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; meta-data key-creation related
@@ -489,3 +489,29 @@
   (println "Done inserting for" datafile))
 
 
+;;;;;
+; Misc, perhaps useful for debugging
+;;;;;
+
+(defmacro cells-in-range "Gets all n-dim cells spanning a range." [start end]
+  `(let [start# ~start
+         end# ~end
+         names# (map #(gensym (str "cr" %1)) (range (count start#)))
+         values# (map #(vec (range %1 (inc %2))) start# end#)]
+     `(for ~(destructure (vec (interleave names# values#))) ~(vec names#))))
+
+(defn containing-origin-anchor "Gets anchor holding cell."
+  ([cell N] (containing-origin-anchor (take (count cell) (repeat 0)) cell N))
+  ([origin cell N]
+    (if (not (keyword? (where-is-cell cell origin N)))
+      (recur (map #(long (inc (- %1 %2)))
+                  (where-is-cell cell origin N) (repeat (/ N 4)))
+             cell (dec (/ N 2)))
+      (let [anchors (reverse (anchor-slots origin N))]
+        (list origin (some #(if (every? true? (map <= %1 cell)) %1 nil)
+                           anchors))))))
+
+(defn cell-left-bound [[origin anchor] cell]
+  (if (= origin anchor)
+    cell
+    (map-indexed #(if (= %2 (nth anchor %1)) 0 (inc (nth anchor %1))) cell)))

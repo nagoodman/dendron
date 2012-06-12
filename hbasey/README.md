@@ -35,7 +35,7 @@ This project encompasses two core functions related to Big Data Cubing.
 1. Construction of the cube for later querying.
 2. Querying the cube.
 
-As a sub-function, the full environment is provided for debug and information gathering via the repl. Direct and indirect access to both HBase and DynamoDB is possible.
+As a sub-function, the full environment's provided for debug and information gathering via the repl. Direct and indirect access to both HBase and DynamoDB is possible.
 
 ## Constructing the Cube
 
@@ -98,3 +98,29 @@ It's on the TODO to allow for more powerful/interesting queries.
 ## License
 
 Copyright (C) 2012 DynamoBI
+
+## Sanity Debugging
+
+In tests.clj, running the code up until the second assert is done should
+result in no assertion errors.
+
+We may include another function that goes through every possible cell C
+and verifies it satisfies the constraint where its value corresponds to
+a sum from the original data set [L_1...L_d]:[C_1...C_d] inclusive, where
+each L_i in L (the left-bound for the sum) is calculated by:
+
+Let A be the anchor cell of the inner-most box containing C, which may be C
+itself.
+If A_i == C_i:
+  L_i = 0
+Else:
+  L_i = A_i+1.
+
+(Technically the else case implicitly satisfies the condition
+A_i+1 <= C_i < A_i + k, with k=N/2, this may help calculate A if uncertain.)
+
+For example, in a 3D 4x4x4 cube where each cell is counted once, N=4,
+the value at cell C=[2 3 2] is 9.
+The relevant anchor is A=[2 2 2], and by the formula above L=[0 3 0].
+It is seen that [0 3 0]:[2 3 2] spans 9 cells. See
+`(cube/cells-in-range [0 3 0] [0 3 2])`

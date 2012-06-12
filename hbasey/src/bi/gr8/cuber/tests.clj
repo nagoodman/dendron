@@ -29,7 +29,6 @@
 
   (hbase-debug)
 
-
   (def tab (hb/table "hbase-debug-data-table"))
   (def keytab (hb/table "hbase-debug-keymap-table"))
 
@@ -41,6 +40,32 @@
         (hb/put keytab (str idx) :value [d-k-hb-fam (str dim "-namekey") (str k)])
         ))))
 
+  (binding [*noisy?* true]
+    (time (dorun (for [x (range 10) y (range 10)]
+      (do (println "adding" [x y] (get orig [x y]))
+        (cube/add-row-to-cube tab keytab [0 0] [[x y] (get orig [x y])] 10 :sum)))))
+    )
+
+(binding [*noisy?* true *really-store?* true] (cube/sum-borders tab keytab [0 0] 10 [10 10]))
+
+  (def a (for [day (range 10) st (range 10)]
+           [[day st] (read-val tab [day st] :sum)]))
+
+  (cube2csv a)
+
+(assert (= a '([[0 0] 3] [[0 1] 5] [[0 2] 6] [[0 3] 8] [[0 4] 10] [[0 5] 17] [[0 6] 6] [[0 7] 9] [[0 8] 12] [[0 9] 13] [[1 0] 7] [[1 1] 3] [[1 2] 2] [[1 3] 11] [[1 4] 8] [[1 5] 33] [[1 6] 1] [[1 7] 2] [[1 8] 7] [[1 9] 2] [[2 0] 9] [[2 1] 4] [[2 2] 2] [[2 3] 9] [[2 4] 3] [[2 5] 50] [[2 6] 4] [[2 7] 5] [[2 8] 16] [[2 9] 4] [[3 0] 12] [[3 1] 9] [[3 2] 5] [[3 3] 28] [[3 4] 14] [[3 5] 69] [[3 6] 7] [[3 7] 15] [[3 8] 35] [[3 9] 7] [[4 0] 16] [[4 1] 2] [[4 2] 1] [[4 3] 6] [[4 4] 3] [[4 5] 86] [[4 6] 7] [[4 7] 1] [[4 8] 11] [[4 9] 2] [[5 0] 21] [[5 1] 19] [[5 2] 29] [[5 3] 54] [[5 4] 74] [[5 5] 126] [[5 6] 25] [[5 7] 45] [[5 8] 65] [[5 9] 77] [[6 0] 4] [[6 1] 5] [[6 2] 2] [[6 3] 14] [[6 4] 1] [[6 5] 28] [[6 6] 3] [[6 7] 3] [[6 8] 10] [[6 9] 1] [[7 0] 6] [[7 1] 4] [[7 2] 2] [[7 3] 8] [[7 4] 3] [[7 5] 42] [[7 6] 9] [[7 7] 1] [[7 8] 13] [[7 9] 3] [[8 0] 11] [[8 1] 13] [[8 2] 7] [[8 3] 30] [[8 4] 7] [[8 5] 60] [[8 6] 13] [[8 7] 13] [[8 8] 39] [[8 9] 9] [[9 0] 17] [[9 1] 1] [[9 2] 2] [[9 3] 7] [[9 4] 2] [[9 5] 76] [[9 6] 3] [[9 7] 1] [[9 8] 9] [[9 9] 2])))
+
+(binding [*noisy?* true]
+  (dorun (for [x (range 4) y (range 4) z (range 4)]
+           (do (println "adding" [x y z]);(get orig [x y]))
+             (cube/add-row-to-cube tab keytab [0 0 0] [[x y z] 1] 4 :sum)))))
+
+(binding [*noisy?* true *really-store?* true] (cube/sum-borders tab keytab [0 0 0] 4 [4 4 4]))
+
+(assert (= (for [x (range 4) z (range 4) y (range 4)]
+  [[x y z] (cube/where-is-cell [x y z] [0 0 0] 4) (read-val tab [x y z] :sum)])
+           '([[0 0 0] :anchor 1] [[0 1 0] :border 1] [[0 2 0] :anchor 3] [[0 3 0] :border 1] [[0 0 1] :border 1] [[0 1 1] :border 1] [[0 2 1] :border 3] [[0 3 1] :border 1] [[0 0 2] :anchor 3] [[0 1 2] :border 3] [[0 2 2] :anchor 9] [[0 3 2] :border 3] [[0 0 3] :border 1] [[0 1 3] :border 1] [[0 2 3] :border 3] [[0 3 3] :border 1] [[1 0 0] :border 1] [[1 1 0] :border 1] [[1 2 0] :border 3] [[1 3 0] :border 1] [[1 0 1] :border 1] [[1 1 1] (1 1 1) 1] [[1 2 1] :border 3] [[1 3 1] (1 3 1) 1] [[1 0 2] :border 3] [[1 1 2] :border 3] [[1 2 2] :border 9] [[1 3 2] :border 3] [[1 0 3] :border 1] [[1 1 3] (1 1 3) 1] [[1 2 3] :border 3] [[1 3 3] (1 3 3) 1] [[2 0 0] :anchor 3] [[2 1 0] :border 3] [[2 2 0] :anchor 9] [[2 3 0] :border 3] [[2 0 1] :border 3] [[2 1 1] :border 3] [[2 2 1] :border 9] [[2 3 1] :border 3] [[2 0 2] :anchor 9] [[2 1 2] :border 9] [[2 2 2] :anchor 27] [[2 3 2] :border 9] [[2 0 3] :border 3] [[2 1 3] :border 3] [[2 2 3] :border 9] [[2 3 3] :border 3] [[3 0 0] :border 1] [[3 1 0] :border 1] [[3 2 0] :border 3] [[3 3 0] :border 1] [[3 0 1] :border 1] [[3 1 1] (3 1 1) 1] [[3 2 1] :border 3] [[3 3 1] (3 3 1) 1] [[3 0 2] :border 3] [[3 1 2] :border 3] [[3 2 2] :border 9] [[3 3 2] :border 3] [[3 0 3] :border 1] [[3 1 3] (3 1 3) 1] [[3 2 3] :border 3] [[3 3 3] (3 3 3) 1])))
+
   (defn mapp [result]
     (hb/latest-as-map result :map-family #(keyword (Bytes/toString %))
       :map-qualifier #(keyword (Bytes/toString %))
@@ -49,17 +74,39 @@
   (hb/with-scanner [res (hb/scan keytab)]
     (pprint (doall (map mapp (-> res .iterator iterator-seq)))))
 
-  (binding [*noisy?* true]
-    (dorun (for [x (range 10) y (range 10)]
-      (do (println "adding" [x y] (get orig [x y]))
-        (cube/add-row-to-cube tab keytab [0 0] [[x y] (get orig [x y])] 10 :sum))))
-    )
+; use this to generate any counts cube to compare. Very slow.
+(binding [N 4]
+  (for [x (range N) z (range N) y (range N)]
+    [[x y z] (count
+               (eval
+                 (cube/cells-in-range
+                   (cube/cell-left-bound (cube/containing-origin-anchor
+                                           [x y z] N) [x y z])
+                   [x y z])))]))
+
+;;maybe don't use this, this is wrong:
+;;looks like a problem with origin-anchor and left-bound combo.
+(cube2csv (binding [N 10]
+  (for [x (range N) y (range N)]
+    [[x y] (count
+             (eval
+               (cube/cells-in-range
+                 (cube/cell-left-bound (cube/containing-origin-anchor
+                                         [x y] N) [x y])
+                 [x y])))])))
 
   (binding [*noisy?* true]
     (dorun (for [x (range 10) y (range 10) z (range 10)]
       (do (println "adding" [x y z]);(get orig [x y]))
         (cube/add-row-to-cube tab keytab [0 0 0] [[x y z] 1] 10 :sum))))
     )
+
+(binding [*noisy?* true *really-store?* true] (cube/sum-borders tab keytab [0 0 0] 10 [10 10 10]))
+
+(cube/query tab keytab [9 9 9] 10 :sum)
+
+(pprint (for [x (range 10) z (range 10) y (range 10)]
+  [[x y z] (cube/where-is-cell [x y z] [0 0 0] 10) (read-val tab [x y z] :sum)]))
 
 (binding [*noisy?* false N 22]
     (dorun (for [x (range N) y (range N)]
@@ -81,16 +128,8 @@
 
 (binding [*noisy?* true] (cube/query tab keytab [21 21 21] 22 :sum))
 
-(binding [*noisy?* true]
-  (dorun (for [x (range 4) y (range 4) z (range 4)]
-           (do (println "adding" [x y z]);(get orig [x y]))
-             (cube/add-row-to-cube tab keytab [0 0 0] [[x y z] 1] 4 :sum)))))
-
-(binding [*noisy?* true *really-store?* true] (cube/sum-borders tab keytab [0 0 0] 4 [4 4 4]))
 
 (binding [*noisy?* true *really-store?* true] (cube/sum-borders tab keytab [0 0 0] 10 [10 10 10]))
-
-(binding [*noisy?* true *really-store?* true] (cube/sum-borders tab keytab [0 0] 10 [10 10]))
 
   (def a (for [x (range 10) y (range 10) z (range 10)]
            [[x y z] (read-val tab [x y z] :sum)]))
@@ -98,12 +137,6 @@
   (def a (for [x (range 4) y (range 4) z (range 4)]
            [[x y z] (read-val tab [x y z] :sum)]))
 
-  (def a (for [day (range 10) st (range 10)]
-           [[day st] (read-val tab [day st] :sum)]))
-
-  (cube2csv a)
-
-(assert (= a '([[0 0] 3] [[0 1] 5] [[0 2] 6] [[0 3] 8] [[0 4] 10] [[0 5] 17] [[0 6] 6] [[0 7] 9] [[0 8] 12] [[0 9] 13] [[1 0] 7] [[1 1] 3] [[1 2] 2] [[1 3] 11] [[1 4] 8] [[1 5] 33] [[1 6] 1] [[1 7] 2] [[1 8] 7] [[1 9] 2] [[2 0] 9] [[2 1] 4] [[2 2] 2] [[2 3] 9] [[2 4] 3] [[2 5] 50] [[2 6] 4] [[2 7] 5] [[2 8] 16] [[2 9] 4] [[3 0] 12] [[3 1] 9] [[3 2] 5] [[3 3] 28] [[3 4] 14] [[3 5] 69] [[3 6] 7] [[3 7] 15] [[3 8] 35] [[3 9] 7] [[4 0] 16] [[4 1] 2] [[4 2] 1] [[4 3] 6] [[4 4] 3] [[4 5] 86] [[4 6] 7] [[4 7] 1] [[4 8] 11] [[4 9] 2] [[5 0] 21] [[5 1] 19] [[5 2] 29] [[5 3] 54] [[5 4] 74] [[5 5] 126] [[5 6] 25] [[5 7] 45] [[5 8] 65] [[5 9] 77] [[6 0] 4] [[6 1] 5] [[6 2] 2] [[6 3] 14] [[6 4] 1] [[6 5] 28] [[6 6] 3] [[6 7] 3] [[6 8] 10] [[6 9] 1] [[7 0] 6] [[7 1] 4] [[7 2] 2] [[7 3] 8] [[7 4] 3] [[7 5] 42] [[7 6] 9] [[7 7] 1] [[7 8] 13] [[7 9] 3] [[8 0] 11] [[8 1] 13] [[8 2] 7] [[8 3] 30] [[8 4] 7] [[8 5] 60] [[8 6] 13] [[8 7] 13] [[8 8] 39] [[8 9] 9] [[9 0] 17] [[9 1] 1] [[9 2] 2] [[9 3] 7] [[9 4] 2] [[9 5] 76] [[9 6] 3] [[9 7] 1] [[9 8] 9] [[9 9] 2])))
 
   (cube2csv (for [x (range 22) y (range 22)] [[x y] (read-val tab [x y] :sum)]))
 
@@ -178,8 +211,5 @@ reading [3 2 3] (3 2 3) as  2
 
 (cube/query tab keytab [3 3 3] 4 :sum)
 
-(assert (= (for [x (range 4) z (range 4) y (range 4)]
-  [[x y z] (cube/where-is-cell [x y z] [0 0 0] 4) (read-val tab [x y z] :sum)])
-           '([[0 0 0] :anchor 1] [[0 1 0] :border 1] [[0 2 0] :anchor 3] [[0 3 0] :border 1] [[0 0 1] :border 1] [[0 1 1] :border 1] [[0 2 1] :border 3] [[0 3 1] :border 1] [[0 0 2] :anchor 3] [[0 1 2] :border 3] [[0 2 2] :anchor 9] [[0 3 2] :border 3] [[0 0 3] :border 1] [[0 1 3] :border 1] [[0 2 3] :border 3] [[0 3 3] :border 1] [[1 0 0] :border 1] [[1 1 0] :border 1] [[1 2 0] :border 3] [[1 3 0] :border 1] [[1 0 1] :border 1] [[1 1 1] (1 1 1) 1] [[1 2 1] :border 3] [[1 3 1] (1 3 1) 1] [[1 0 2] :border 3] [[1 1 2] :border 3] [[1 2 2] :border 9] [[1 3 2] :border 3] [[1 0 3] :border 1] [[1 1 3] (1 1 3) 1] [[1 2 3] :border 3] [[1 3 3] (1 3 3) 1] [[2 0 0] :anchor 3] [[2 1 0] :border 3] [[2 2 0] :anchor 9] [[2 3 0] :border 3] [[2 0 1] :border 3] [[2 1 1] :border 3] [[2 2 1] :border 9] [[2 3 1] :border 3] [[2 0 2] :anchor 9] [[2 1 2] :border 9] [[2 2 2] :anchor 27] [[2 3 2] :border 9] [[2 0 3] :border 3] [[2 1 3] :border 3] [[2 2 3] :border 9] [[2 3 3] :border 3] [[3 0 0] :border 1] [[3 1 0] :border 1] [[3 2 0] :border 3] [[3 3 0] :border 1] [[3 0 1] :border 1] [[3 1 1] (3 1 1) 1] [[3 2 1] :border 3] [[3 3 1] (3 3 1) 1] [[3 0 2] :border 3] [[3 1 2] :border 3] [[3 2 2] :border 9] [[3 3 2] :border 3] [[3 0 3] :border 1] [[3 1 3] (3 1 3) 1] [[3 2 3] :border 3] [[3 3 3] (3 3 3) 1])))
 
 (binding [*noisy?* true *really-store?* false] (cube/add-row-to-cube tab keytab [0 0 0] [[1 1 1] 1] 4 :sum))
