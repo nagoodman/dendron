@@ -1,0 +1,62 @@
+Dendron stores the prefix sums (and their relative prefixing schemes) as a set of k-v pairs in any generalized k-v system.
+
+Some constraints:
+ - Dimensional space (aka, total matrix size) is inherently too "fuckin'" big so the key structure needs to allow for missing keys/sparse data.
+ - Algorithims for query typically need small, precisely indexed keys but usually don't need to iterate through arrays of closeby neighbors.
+ - The overlaying methods may include very large subsets (25 dimensions x 10 million members (/2) still yields millions of values in one "overlay box"
+
+The key structure for the solution as it overlays onto the k-v store is as follows:
+
+All the items (Metadata, Data Records, Members, and Overlays) are all prefixed with the agg id.
+(agg-j8923j4)
+
+JSON is for ease of reading... actual storage in k-v system may be any native format
+
+METADATA
+--------
+
+key: <<agg-id>>_md_dimensions 
+## order, name, and total members of dimensions in the aggregation
+
+"dimensions": [
+    {"name" : "Time", "totalMembers" : 8}
+    , {"name" : "State", "totalMembers" : 3}
+    , {"name" : "Airline", "totalMembers" : 3}
+  ]
+
+key: <<agg-id>>_md_measures
+
+## Keeps track of the payload of the datasets
+
+"measures": [
+{"name" : "Hits", "agg" : "sum"}
+,{"name" : "Load Time", "agg" : "sum"}
+]
+
+DATA RECORDS
+------------
+
+key: <<agg-id>>_<<d1>>_<<d2>>_<<d3>>_<<dN>>
+
+## Contains the actual values for that intersection. In MOLAP this is the actual "cube" and multiple records may have been added to this particular cell location (aka, 10 orders might be present here)  COUNT is ALWAYS ALWAYS present!
+
+{"Count": "10" , "Hits": "10", "Load Time": "89382.08"}
+
+key: <<agg-id>>_data_<<unique_key>>
+
+## The actual data records, in format X that include all the individual column values, with specific columns for the dimensions (in addition to others).  The "unique key" is the row key (or other natural way of identifying a single record in the entire dataset
+
+{ "Time" : "2011-Q1", "State" : "WA", "Airline" : "AS", "Year" : 2011, "Quarter" : "Q1", "Load Time" : "1010"}
+
+MEMBERS
+-------
+
+key: <<agg-id>>_<<dimension_name>>_<<member>>
+
+## The actual member anywhere in the hierarchy
+
+## Members at the base level including the ordinal contain the various dimensional coordinates (including overlays) 
+eg, agg-9802j3_Time_2011-Q1
+
+{"n" : "
+
